@@ -1,0 +1,3 @@
+[submodule "available-assets/retro3d-assets"]
+	path = available-assets/retro3d-assets
+	url = https://github.com/M3-org/retro3d-assets.git

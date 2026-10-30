@@ -1,0 +1,43 @@
+extends RefCounted
+
+const Scenery = preload("res://game/demo/targets/demo_scenery.gd")
+const Target = preload("res://game/demo/targets/demo_target.gd")
+const ROOT: String = "res://available-assets/retro3d-assets/"
+
+static func instantiate_target(kind: StringName, dimensions: Vector3, capacity: float, required_size: float) -> Node3D:
+	var wrapper: Target = Target.new()
+	_configure(wrapper, kind, dimensions)
+	wrapper.configure_drain(capacity, required_size)
+	return wrapper
+
+static func instantiate_scenery(kind: StringName, dimensions: Vector3) -> Node3D:
+	var wrapper: Scenery = Scenery.new()
+	_configure(wrapper, kind, dimensions)
+	return wrapper
+
+static func _configure(wrapper: Scenery, kind: StringName, dimensions: Vector3) -> void:
+	wrapper.name = String(kind).to_pascal_case()
+	wrapper.dimensions = dimensions
+	wrapper.kind = kind
+	match kind:
+		&"bush", &"bush_alt", &"tree", &"tree_alt":
+			var asset: String = {&"bush": "bush02", &"bush_alt": "bush04", &"tree": "tree01", &"tree_alt": "tree04"}[kind]
+			wrapper.model_scene = load(ROOT + "Nature/tree_pack_1.1/models/" + asset + ".fbx") as PackedScene
+			wrapper.texture = load(ROOT + "Nature/tree_pack_1.1/textures/" + asset + ".png") as Texture2D
+			wrapper.cutout = true
+		&"pine":
+			wrapper.model_scene = load(ROOT + "Nature/exports/trees/pine_tree.glb") as PackedScene
+		&"rock":
+			wrapper.model_scene = load(ROOT + "Nature/exports/rocks/rock.glb") as PackedScene
+		&"house1", &"house2", &"house3", &"house4", &"house5":
+			wrapper.model_scene = load(ROOT + "Buildings/retro_house_pack/models/glb/" + String(kind) + ".glb") as PackedScene
+			wrapper.texture = load(ROOT + "Buildings/retro_house_pack/textures/256x256/" + String(kind) + "_tex1.png") as Texture2D
+			wrapper.blocking = true
+		&"shed":
+			wrapper.model_scene = load(ROOT + "Industrial/Shacks Shanties Sheds and Gantries 0001/Large Shed A.blend") as PackedScene
+			wrapper.texture = load(ROOT + "Industrial/Shacks Shanties Sheds and Gantries 0001/Shed Corrugated Texture.png") as Texture2D
+			wrapper.frame_texture = load(ROOT + "Industrial/Shacks Shanties Sheds and Gantries 0001/Shed Frame Texture.png") as Texture2D
+			wrapper.model_yaw = PI * 0.5
+			wrapper.blocking = true
+		_:
+			push_error("Unknown demo asset kind: %s" % kind)

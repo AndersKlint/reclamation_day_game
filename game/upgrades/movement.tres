@@ -1,0 +1,9 @@
+[gd_resource type="Resource" script_class="UpgradeDefinition" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://game/upgrades/upgrade_definition.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+title = "Wandering"
+description = "+20% movement speed. Slip between the living."
+effects = Dictionary[String, float]({"movement_multiplier": 1.2})

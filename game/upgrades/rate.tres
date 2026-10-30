@@ -1,0 +1,9 @@
+[gd_resource type="Resource" script_class="UpgradeDefinition" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://game/upgrades/upgrade_definition.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+title = "Hunger"
+description = "+30% drain rate. Draw the fading warmth closer."
+effects = Dictionary[String, float]({"rate_multiplier": 1.3})

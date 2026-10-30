@@ -1,0 +1,78 @@
+[gd_scene load_steps=6 format=3]
+
+[ext_resource type="Shader" path="res://game/demo/ground_fog.gdshader" id="1_ground_fog"]
+
+[sub_resource type="ProceduralSkyMaterial" id="dusk_sky"]
+sky_top_color = Color(0.035, 0.065, 0.115, 1)
+sky_horizon_color = Color(0.72, 0.32, 0.16, 1)
+sky_curve = 0.055
+sky_energy_multiplier = 0.8
+ground_bottom_color = Color(0.055, 0.065, 0.085, 1)
+ground_horizon_color = Color(0.48, 0.26, 0.19, 1)
+sun_angle_max = 1.8
+sun_curve = 0.15
+
+[sub_resource type="Sky" id="sky"]
+sky_material = SubResource("dusk_sky")
+
+[sub_resource type="Environment" id="environment"]
+background_mode = 2
+sky = SubResource("sky")
+ambient_light_source = 2
+ambient_light_color = Color(0.47, 0.53, 0.72, 1)
+ambient_light_energy = 0.6
+ambient_light_sky_contribution = 0.0
+reflected_light_source = 2
+tonemap_mode = 2
+glow_enabled = true
+glow_intensity = 0.6
+glow_strength = 0.8
+glow_bloom = 0.0
+glow_hdr_threshold = 2.0
+ssao_enabled = true
+ssao_radius = 1.5
+ssao_intensity = 0.65
+fog_enabled = false
+fog_light_color = Color(0.24, 0.31, 0.39, 1)
+fog_light_energy = 1.0
+fog_density = 0.011
+fog_sky_affect = 0.5
+volumetric_fog_enabled = true
+volumetric_fog_density = 0.0
+volumetric_fog_albedo = Color(0.55, 0.6, 0.72, 1)
+volumetric_fog_sky_affect = 1.0
+volumetric_fog_length = 280.0
+volumetric_fog_ambient_inject = 0.25
+
+[sub_resource type="ShaderMaterial" id="ground_fog_material"]
+shader = ExtResource("1_ground_fog")
+shader_parameter/base_density = 0.0225
+shader_parameter/base_height = 3.0
+shader_parameter/height_falloff = 12.0
+shader_parameter/fog_albedo = Color(0.55, 0.6, 0.72, 1)
+
+[node name="DuskAtmosphere" type="Node3D"]
+
+[node name="WorldEnvironment" type="WorldEnvironment" parent="."]
+environment = SubResource("environment")
+
+[node name="GroundFog" type="FogVolume" parent="."]
+shape = 4
+material = SubResource("ground_fog_material")
+
+[node name="DuskLight" type="DirectionalLight3D" parent="."]
+rotation_degrees = Vector3(-14, 165, 0)
+light_color = Color(1.0, 0.46, 0.22, 1)
+light_energy = 0.3
+light_angular_distance = 0.65
+light_volumetric_fog_energy = 0.08
+shadow_enabled = true
+directional_shadow_max_distance = 100.0
+
+[node name="DuskFill" type="DirectionalLight3D" parent="."]
+rotation_degrees = Vector3(-45, 145, 0)
+light_color = Color(0.47, 0.53, 0.72, 1)
+light_energy = 0.25
+light_volumetric_fog_energy = 0.0
+shadow_enabled = false
+directional_sky_mode = 2
