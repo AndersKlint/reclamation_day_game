@@ -1,4 +1,4 @@
-[gd_scene load_steps=10 format=3]
+[gd_scene load_steps=11 format=3]
 
 [ext_resource type="Script" path="res://game/run/run.gd" id="1"]
 [ext_resource type="PackedScene" path="res://game/demo/world/demo_region.tscn" id="2"]
@@ -9,6 +9,7 @@
 [ext_resource type="PackedScene" path="res://game/rebirth/life_release.tscn" id="7"]
 [ext_resource type="PackedScene" path="res://game/demo/dusk_atmosphere.tscn" id="8"]
 [ext_resource type="Script" path="res://game/humans/civilian_population.gd" id="9"]
+[ext_resource type="PackedScene" path="res://game/music/background_music.tscn" id="10_music"]
 
 [node name="DemoRun" type="Node3D" node_paths=PackedStringArray("region", "civilian_population")]
 process_mode = 3
@@ -49,3 +50,5 @@ process_mode = 3
 process_mode = 1
 
 [node name="DuskAtmosphere" parent="." instance=ExtResource("8")]
+
+[node name="BackgroundMusic" parent="." instance=ExtResource("10_music")]

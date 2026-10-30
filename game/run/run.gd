@@ -178,7 +178,6 @@ func _begin_rebirth() -> void:
 	if civilian_population != null:
 		civilian_population.stop()
 	get_tree().paused = false
-	balancer.get_node("ReachVisual").hide()
 	region.renew(rebirth_duration)
 	life_release.begin(balancer.global_position, balancer.get_node("Visuals"), rebirth_duration)
 

@@ -1,0 +1,738 @@
+@tool
+extends VBoxContainer
+## The Kit Browser dock: filter the merged index, see thumbnails, place meshes.
+##
+## Every decision about WHAT to show lives in catalog.gd and is tested headless;
+## this file is the presentation and the editor wiring.
+
+const Catalog := preload("res://addons/kit_browser/catalog.gd")
+const AssetList := preload("res://addons/kit_browser/asset_list.gd")
+const Settings := preload("res://addons/kit_browser/settings.gd")
+const Indexer := preload("res://addons/kit_browser/indexer.gd")
+const Thumbnailer := preload("res://addons/kit_browser/thumbnailer.gd")
+const SettingsDialog := preload("res://addons/kit_browser/settings_dialog.gd")
+
+## Thumbnails are .gdignore'd, so they are files on disk rather than imported
+## resources and must be decoded by hand. Doing that for 1,575 of them in one
+## frame locks the editor, so a budget's worth are decoded per frame instead.
+const ICONS_PER_FRAME := 24
+
+## The dock's one "this will not work" colour, shared by the status line and
+## by a tile whose composite cannot be placed.
+const UNAVAILABLE_COLOR := Color(1.0, 0.55, 0.45)
+
+var _all: Array = []
+## The filtered assets before variants were collapsed -- what a grouped tile
+## stands for, and therefore what its right-click menu has to offer.
+var _filtered: Array = []
+var _shown: Array = []
+var _icon_cache: Dictionary = {}
+var _pending: Array = []
+
+var _search: LineEdit
+var _kit_pick: OptionButton
+var _cat_pick: OptionButton
+var _bay_pick: OptionButton
+var _tier_pick: OptionButton
+var _review_only: CheckBox
+var _group_variants: CheckBox
+var _list: ItemList
+var _status: Label
+var _details: Label
+var _variants: PopupMenu
+var _variant_assets: Array = []
+
+var _icon_px: int = Settings.tile_size()
+var _index_button: Button
+var _settings_dialog: AcceptDialog
+var _indexing := false
+
+## Godot 4.7 has no scriptable editor-progress API (EditorProgress is a C++-
+## only class; EditorPlugin/EditorInterface expose no progress_add_task in
+## GDScript), so this is a small popup of our own rather than a wrapper
+## around one. A PopupPanel, not an AcceptDialog: there is no OK to keep out
+## of the way, and Cancel is the only button because dismissing the window is
+## not the same act as stopping the run. If the popup is closed some other way
+## (Escape, a window-manager control) the run carries on regardless -- the
+## popup is a status window, not a gate, and stopping is an explicit request.
+var _progress_popup: PopupPanel
+var _progress_label: Label
+var _progress_bar: ProgressBar
+var _cancel_button: Button
+## Set by Cancel, read between renders. An index run over a library this size
+## is an hour of work, and until this existed the only way out of one was to
+## close the editor.
+var _cancel_requested := false
+
+
+func _ready() -> void:
+	name = "Kits"
+	_build_ui()
+	reload()
+
+
+func _build_ui() -> void:
+	add_theme_constant_override("separation", 4)
+
+	_search = LineEdit.new()
+	_search.placeholder_text = "Search name (all terms must match)"
+	_search.clear_button_enabled = true
+	_search.text_changed.connect(func(_t: String) -> void: _apply())
+	add_child(_search)
+
+	# Flow rather than box containers: this is a side dock and the user decides
+	# how narrow it gets. Anything that will not fit on a row moves to the next
+	# one instead of setting a floor under the whole dock.
+	var row := HFlowContainer.new()
+	add_child(row)
+	_kit_pick = _picker(row, "Kit")
+	_cat_pick = _picker(row, "Shelf — what kind of thing it is")
+	_bay_pick = _picker(row, "Bay width — pieces that line up with each other")
+
+	var row2 := HFlowContainer.new()
+	add_child(row2)
+	_review_only = CheckBox.new()
+	_review_only.text = "Needs review"
+	_review_only.tooltip_text = "Only assets the classifier flagged as uncertain"
+	_review_only.toggled.connect(func(_p: bool) -> void: _apply())
+	row2.add_child(_review_only)
+	_group_variants = CheckBox.new()
+	_group_variants.text = "Group variants"
+	_group_variants.tooltip_text = "One tile per family, not one per finish"
+	_group_variants.button_pressed = true
+	_group_variants.toggled.connect(func(_p: bool) -> void: _apply())
+	row2.add_child(_group_variants)
+
+	# Only visible when the project declares tier directories (a pipeline
+	# convention — see Settings.variant_tiers). One global switch, not a
+	# per-tile choice: tiers are texture resolutions of identical meshes, so
+	# "which tier am I placing" is a mode, and duplicate tiles per asset were
+	# exactly the noise this control replaces.
+	_tier_pick = OptionButton.new()
+	_tier_pick.fit_to_longest_item = false
+	_tier_pick.tooltip_text = "Which resolution tier tiles resolve to"
+	_tier_pick.item_selected.connect(func(i: int) -> void:
+		Settings.set_selected_tier(_tier_pick.get_item_text(i))
+		_apply())
+	row2.add_child(_tier_pick)
+	_refresh_tier_picker()
+
+	var settings_button := Button.new()
+	settings_button.text = "Settings…"
+	settings_button.pressed.connect(func() -> void: _settings_dialog.popup_centered())
+	row2.add_child(settings_button)
+
+	# Its own row: a slider sharing a flow row with checkboxes wraps
+	# unpredictably and gets squeezed to whatever width is left over.
+	var row3 := HBoxContainer.new()
+	add_child(row3)
+	var size_label := Label.new()
+	size_label.text = "Tile size"
+	row3.add_child(size_label)
+
+	var slider := HSlider.new()
+	slider.min_value = 48
+	slider.max_value = 256
+	slider.step = 8
+	slider.value = _icon_px
+	slider.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	slider.tooltip_text = "Tile size"
+	slider.value_changed.connect(func(v: float) -> void: set_tile_size(int(v)))
+	row3.add_child(slider)
+
+	_list = AssetList.new()
+	# Long vendor names are trimmed to the tile rather than widening it. The
+	# tooltip carries the full name and taxonomy, so nothing is lost.
+	_list.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
+	_list.fixed_column_width = _icon_px + 24
+	_list.max_columns = 0                        # as many columns as fit
+	_list.icon_mode = ItemList.ICON_MODE_TOP
+	_list.fixed_icon_size = Vector2i(_icon_px, _icon_px)
+	_list.same_column_width = true
+	_list.select_mode = ItemList.SELECT_MULTI
+	_list.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	_list.item_selected.connect(_on_selected)
+	_list.item_activated.connect(_on_activated)
+	_list.item_clicked.connect(_on_clicked)
+	add_child(_list)
+
+	_settings_dialog = SettingsDialog.new()
+	_settings_dialog.force_reindex_requested.connect(func() -> void: run_index(true))
+	_settings_dialog.index_requested.connect(func() -> void: run_index(false))
+	# Settings only reach the dock when something re-reads them. Adding
+	# resolution tiers used to leave the tier switch hidden until the editor
+	# was restarted or the addon toggled off and on, because nothing between
+	# the dialog and the dock ever looked again.
+	_settings_dialog.settings_changed.connect(reload)
+	add_child(_settings_dialog)
+	_index_button = _settings_dialog.index_button
+
+	_variants = PopupMenu.new()
+	_variants.id_pressed.connect(_on_variant_chosen)
+	add_child(_variants)
+
+	_progress_popup = PopupPanel.new()
+	_progress_popup.exclusive = true
+	var progress_box := VBoxContainer.new()
+	progress_box.custom_minimum_size = Vector2(320, 0)
+	progress_box.add_theme_constant_override("separation", 6)
+	_progress_popup.add_child(progress_box)
+	_progress_label = Label.new()
+	_progress_label.text = "Indexing…"
+	progress_box.add_child(_progress_label)
+	_progress_bar = ProgressBar.new()
+	_progress_bar.show_percentage = false
+	progress_box.add_child(_progress_bar)
+	_cancel_button = Button.new()
+	_cancel_button.text = "Cancel"
+	_cancel_button.tooltip_text = "Stop after the thumbnail being rendered now"
+	_cancel_button.pressed.connect(cancel_index)
+	progress_box.add_child(_cancel_button)
+	add_child(_progress_popup)
+
+	_status = Label.new()
+	_status.add_theme_font_size_override("font_size", 11)
+	add_child(_status)
+
+	_details = Label.new()
+	_details.add_theme_font_size_override("font_size", 11)
+	_details.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	_details.custom_minimum_size.y = 34
+	add_child(_details)
+
+
+## A filter dropdown that does not hold the dock open.
+##
+## fit_to_longest_item defaults to true, so a picker reserves room for its
+## longest entry even when a short one is selected. Three of them did that at
+## once and pinned the dock to 727 px: "LaylaDesign/Megastructure_Scifi_World"
+## alone claimed 337 of it.
+func _picker(parent: Node, tip: String) -> OptionButton:
+	var picker := OptionButton.new()
+	picker.fit_to_longest_item = false
+	picker.clip_text = true
+	picker.custom_minimum_size.x = 84
+	picker.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	picker.set_meta("hint", tip)
+	picker.tooltip_text = tip
+	picker.item_selected.connect(func(_i: int) -> void: _apply())
+	parent.add_child(picker)
+	return picker
+
+
+## Clipped text hides which value is selected, so the tooltip has to carry it.
+func _retip(picker: OptionButton) -> void:
+	var hint: String = picker.get_meta("hint", "")
+	var chosen := picker.get_item_text(picker.selected) if picker.selected >= 0 else ""
+	picker.tooltip_text = hint if chosen.is_empty() else "%s\n%s" % [hint, chosen]
+
+
+## The editor opened, closed or switched scenes.
+func on_scene_changed(_root: Node = null) -> void:
+	_refresh_status()
+
+
+func set_tile_size(px: int) -> void:
+	_icon_px = px
+	Settings.set_tile_size(px)
+	_list.fixed_icon_size = Vector2i(px, px)
+	_list.fixed_column_width = px + 24
+	_icon_cache.clear()          # icons were resized to the old px
+	_apply()
+
+
+## Scan the configured asset roots and render any thumbnails missing or stale.
+## A failed mesh is recorded and the run carries on -- same rule as the
+## pipeline. No is_editor_hint() guard: nothing in this body touches
+## EditorInterface, and the button that reaches this is only pressable
+## inside a running editor anyway.
+func run_index(force: bool = false) -> void:
+	if _indexing:
+		return
+	_set_running(true)
+	# The renderer is only spawned once there is an actual render job: a
+	# no-op run (nothing new, or zero kits found) used to still stand up a
+	# SubViewport for nothing and log a spurious "scenario is null" error in
+	# a fresh project with no roots configured yet.
+	var renderer: Node = null
+	var failures := PackedStringArray()
+	var skipped_kits := PackedStringArray()
+	var unmet := PackedStringArray()
+	var write_failures := PackedStringArray()
+	var kits_found := 0
+	var kits_done := 0
+	# Overlapping roots (e.g. "res://assets" and "res://assets/CombatProps")
+	# resolve the same kit directory from two different roots; indexed once
+	# under either root, not once per root it is reachable from.
+	var indexed_dirs := {}
+	var roots := Settings.roots()
+	var tiers := Settings.variant_tiers()
+
+	for root in roots:
+		for kit in Indexer.find_kits(root):
+			# "." means the root itself is the kit; every other kit name nests
+			# under root. No path ever gets an "/." segment appended.
+			var kit_dir := root if kit == "." else "%s/%s" % [root, kit]
+			var norm_dir := kit_dir.rstrip("/")
+			if indexed_dirs.has(norm_dir):
+				continue
+			indexed_dirs[norm_dir] = true
+			kits_found += 1
+			var kit_label := root.get_file() if kit == "." else kit
+			var old: Variant = null
+			if FileAccess.file_exists("%s/index.json" % kit_dir):
+				old = JSON.parse_string(FileAccess.get_file_as_string(
+					"%s/index.json" % kit_dir))
+			if not Indexer.can_overwrite(old, force):
+				skipped_kits.append(kit_label)
+				continue
+			var scanned := Indexer.scan_kit(kit_dir, roots)
+			var plan := Indexer.plan(scanned, old,
+				Indexer.existing_thumbs(kit_dir), force, tiers)
+			var entries: Array = plan["entries"]
+			var jobs: Array = plan["render"]
+			# Recomputed over kept and fresh entries together: an unchanged
+			# asset keeps its old entry (mtime/thumbnail skip is untouched),
+			# but a re-indexed sibling arriving alongside it can still change
+			# the family it belongs to.
+			Indexer.annotate_families(entries)
+			if not jobs.is_empty() and renderer == null:
+				renderer = Thumbnailer.new()
+				add_child(renderer)
+				renderer.setup()
+			if not jobs.is_empty() and not _progress_popup.visible:
+				_progress_popup.popup_centered()
+			var dropped := []
+			var done := 0
+			for j in jobs.size():
+				if _cancel_requested:
+					break
+				var entry: Dictionary = entries[jobs[j]]
+				var note := "Indexing %s — %d/%d" % [kit_label, j + 1, jobs.size()]
+				_status.text = note
+				# Per-kit max rather than a total across every kit: the total
+				# is only known after every kit's plan has run, and re-scanning
+				# every kit up front just to size a bar is not worth the extra
+				# pass over disk.
+				_progress_label.text = note
+				_progress_bar.max_value = jobs.size()
+				_progress_bar.value = j + 1
+				var out := "%s/%s/%s%s" % [kit_dir, Indexer.THUMB_DIR,
+					String(entry["path"]).get_basename(), Indexer.THUMB_EXT]
+				var result: Dictionary = await renderer.render_one(
+					"%s/%s" % [kit_dir, entry["path"]], out, Settings.resolution())
+				done += 1
+				if result["ok"]:
+					entry["size_m"] = result["size_m"]
+				elif result.get("reason", "") == Thumbnailer.NO_GEOMETRY:
+					# Not a failure and not an asset: a file that loaded fine
+					# and has nothing to draw. Dropped below rather than here,
+					# because jobs indexes into entries.
+					dropped.append(jobs[j])
+				else:
+					failures.append("%s/%s" % [kit_label, entry["path"]])
+			# A cancel that landed while this kit's last thumbnail was drawing
+			# is not an abort: the kit finished, and its index is written like
+			# any other. Only a kit with renders still owed is salvaged --
+			# rendered entries kept, unreached ones carried over from the old
+			# index -- and a pipeline index is left exactly as it was, since a
+			# partial addon doc would take the classifier's work with it.
+			var aborted := done < jobs.size()
+			var to_write: Variant = entries
+			if aborted:
+				to_write = Indexer.salvage(entries, jobs, done, dropped, old)
+			else:
+				to_write = Indexer.prune(entries, dropped)
+			if to_write != null and (not to_write.is_empty() or old != null):
+				var write_err := Indexer.write_index(kit_dir, Indexer.build_doc(to_write))
+				if write_err != OK:
+					push_warning("Kit Browser: could not write index.json for %s (%s)"
+						% [kit_label, write_err])
+					write_failures.append(kit_label)
+				elif not aborted:
+					kits_done += 1
+			# Reported for what was actually written: a composite held back
+			# from a kit whose index never landed is not something the dock
+			# will be missing.
+			if to_write != null:
+				for f in scanned:
+					if f.has("unmet_deps"):
+						unmet.append("%s/%s needs %s" % [kit_label, f["path"],
+							", ".join(f["unmet_deps"])])
+			if _cancel_requested:
+				break
+		if _cancel_requested:
+			break
+
+	if renderer != null:
+		renderer.queue_free()
+	# Unconditional: covers the zero-kits and all-skipped paths too, where
+	# the popup was never shown, as well as the ordinary case where it was.
+	_progress_popup.hide()
+	_set_running(false)
+	reload()
+	var note: String
+	if _cancel_requested:
+		# Whole kits finished before the cancel keep their new indexes; the
+		# one in flight keeps what it rendered. Index again to carry on.
+		note = ("Indexing cancelled — %d kits finished, rendered thumbnails kept. "
+			+ "Index again to continue.") % kits_done
+	elif kits_found == 0:
+		note = ("No kits found under the configured roots — each root's " +
+			"subfolders are kits, or the root itself if it holds meshes.")
+	else:
+		note = "Indexed."
+	# Outside the branch above: a cancelled run still rendered whatever it got
+	# through, and whatever failed in there is owed to the user exactly as much
+	# as it is after a run that finished.
+	if not skipped_kits.is_empty():
+		note += " Skipped %d pipeline-managed kits." % skipped_kits.size()
+	if not unmet.is_empty():
+		# Stated rather than silent: the composites are genuinely absent
+		# from the dock's renderable set, and a run that quietly drew
+		# fewer tiles than last time is the kind of thing people notice
+		# a week later and blame on the indexer.
+		note += " %d composites skipped for absent dependency kits." % unmet.size()
+		for u in unmet:
+			push_warning("Kit Browser: skipped composite %s" % u)
+	if not failures.is_empty():
+		note += " %d assets failed to render (see Output)." % failures.size()
+		for f in failures:
+			push_warning("Kit Browser: could not thumbnail %s" % f)
+	if not write_failures.is_empty():
+		note += " %d kit indexes failed to write (see Output)." % write_failures.size()
+	_status.text = note
+
+
+## One switch for everything that must agree on whether a run is in flight.
+## Both ways of starting a run lock together: Index was disabled during a run
+## but Force re-index was not, and a Force press mid-run handed off to a
+## run_index that returned at once -- no run, and no reload either, because
+## the hand-off had suppressed the dialog's own.
+func _set_running(running: bool) -> void:
+	_indexing = running
+	_index_button.disabled = running
+	_settings_dialog.force_button.disabled = running
+	_cancel_button.disabled = not running
+	if running:
+		_cancel_requested = false
+
+
+## Ask a running index to stop after the thumbnail it is drawing now.
+##
+## Not a kill: render_one is mid-await on the SubViewport, and tearing that
+## down under it is how a half-written .webp gets left on disk to be believed
+## by the next run. One more render is a few seconds.
+func cancel_index() -> void:
+	if not _indexing:
+		return
+	_cancel_requested = true
+	_cancel_button.disabled = true
+	_progress_label.text = "Cancelling — finishing the current thumbnail…"
+
+
+## Re-read the index from disk and rebuild the facet dropdowns.
+##
+## Refused mid-run: the indexes are being rewritten under it, and the count
+## it would put in the status line overwrites the progress note. The run ends
+## with a reload of its own, which carries any settings change made meanwhile.
+func reload() -> void:
+	if _indexing:
+		return
+	_all = Catalog.load_assets()
+	_icon_cache.clear()
+	_fill_picker(_kit_pick, "All kits", Catalog.kits_of(_all))
+	_fill_picker(_cat_pick, "All shelves", Catalog.shelves_of(_all))
+	_fill_picker(_bay_pick, "All bays", Catalog.bays_of(_all))
+	_refresh_review_visibility()
+	_refresh_tier_picker()
+	_apply()
+
+
+## "Needs review" only means anything against the ProtoForge pipeline's
+## classifier, which is the sole writer of needs_review: true. A library made
+## up entirely of addon-indexed public kits never sets it, and offering the
+## checkbox there is a control with nothing behind it. Hidden rather than
+## disabled, so it does not sit there unexplained; unchecked on hide so a
+## check made while it was still relevant cannot silently filter out every
+## asset in a library that no longer has anything flagged.
+func _refresh_review_visibility() -> void:
+	var relevant := false
+	for a in _all:
+		if a.get("needs_review", false):
+			relevant = true
+			break
+	_review_only.visible = relevant
+	if not relevant:
+		_review_only.button_pressed = false
+
+
+func _fill_picker(picker: OptionButton, all_label: String, values: PackedStringArray) -> void:
+	var previous := picker.get_item_text(picker.selected) if picker.selected >= 0 else ""
+	picker.clear()
+	picker.add_item(all_label)
+	for v in values:
+		picker.add_item(v)
+	# Keep the user's choice across a reload where possible; losing the filter
+	# on every refresh makes the button useless during iteration.
+	for i in picker.item_count:
+		if picker.get_item_text(i) == previous:
+			picker.select(i)
+			_retip(picker)
+			return
+	picker.select(0)
+	_retip(picker)
+
+
+func _picked(picker: OptionButton) -> String:
+	return "" if picker.selected <= 0 else picker.get_item_text(picker.selected)
+
+
+func _refresh_tier_picker() -> void:
+	var tiers := Settings.variant_tiers()
+	_tier_pick.visible = not tiers.is_empty()
+	_tier_pick.clear()
+	var chosen := Settings.selected_tier()
+	for i in tiers.size():
+		_tier_pick.add_item(tiers[i])
+		if tiers[i] == chosen:
+			_tier_pick.select(i)
+
+
+func _apply() -> void:
+	for picker in [_kit_pick, _cat_pick, _bay_pick]:
+		_retip(picker)
+	_filtered = Catalog.filter(_all, _search.text, _picked(_kit_pick),
+		_picked(_cat_pick), _review_only.button_pressed, _picked(_bay_pick))
+	# Tiers collapse before families: the family badge and the right-click
+	# variant menu are both built from _filtered, and either one counting an
+	# asset's 1K and 2K twins as two variants would be lying about the kit.
+	_filtered = Catalog.collapse_tiers(_filtered, Settings.variant_tiers(),
+		Settings.selected_tier())
+	_shown = (Catalog.collapse_families(_filtered)
+		if _group_variants.button_pressed else _filtered)
+	_populate()
+
+
+func _populate() -> void:
+	_list.clear()
+	_pending.clear()
+	var paths := PackedStringArray()
+	for i in _shown.size():
+		var asset: Dictionary = _shown[i]
+		var siblings: int = asset.get("family_count", 0)
+		var idx := _list.add_item(_caption(asset.get("name", "?"), siblings))
+		_list.set_item_tooltip(idx, Catalog.describe(asset))
+		# Still listed, and still says what it is -- the composite exists and
+		# checking out its dependency kits makes it whole, so hiding it would
+		# turn a fixable gap into an invisible one. It just cannot be placed,
+		# and an empty path is what tells the drag payload the same thing.
+		if asset.has("unmet_deps"):
+			_list.set_item_custom_fg_color(idx, UNAVAILABLE_COLOR)
+			paths.append("")
+		else:
+			paths.append(asset.get("path", ""))
+
+		var thumb := Catalog.thumbnail_path(asset)
+		if thumb.is_empty():
+			continue
+		if _icon_cache.has(thumb):
+			_list.set_item_icon(idx, _icon_cache[thumb])
+		else:
+			_pending.append([idx, thumb])
+	_list.mesh_paths = paths
+
+	_refresh_status()
+	_details.text = ""
+	set_process(not _pending.is_empty())
+
+
+## The count line, plus a warning when double-clicking cannot do anything.
+##
+## Placing a tile needs an edited scene, and with none open the attempt used to
+## fail into the small details label where nobody saw it -- the dock looked
+## broken rather than unready. The condition is worth stating before it is hit,
+## not after.
+func _refresh_status() -> void:
+	if _all.is_empty():
+		_status.text = "No kit indexes found — set asset roots in Settings, then Index."
+		return
+
+	var counted := ("%d tiles of %d assets" % [_shown.size(), _all.size()]
+		if _group_variants.button_pressed
+		# Collapsed, the tile count is not an asset count, and saying "218 of
+		# 1926 assets" while showing 218 families would be a plain lie.
+		else "%d of %d assets" % [_shown.size(), _all.size()])
+
+	if _edited_root() == null:
+		_status.text = "%s  —  open a scene to place them" % counted
+		_status.add_theme_color_override("font_color",
+			Color(1.0, 0.72, 0.35))
+	else:
+		_status.text = counted
+		_status.remove_theme_color_override("font_color")
+
+
+## The scene a double-click would add to, or null when the editor has none.
+## Guarded so the dock can be built and tested outside an editor.
+func _edited_root() -> Node:
+	if not Engine.is_editor_hint():
+		return null
+	return EditorInterface.get_edited_scene_root()
+
+
+## A tile caption that keeps its variant count.
+##
+## The count is the one thing on a tile that cannot be recovered by looking at
+## the thumbnail, and letting the ItemList trim the whole string removes it
+## first: almost every vendor name is long enough that "(6)" fell off the end.
+## So the name is trimmed to leave room for the suffix, rather than the suffix
+## being trimmed to leave room for the name.
+func _caption(label: String, siblings: int) -> String:
+	if siblings <= 1:
+		return label
+	var suffix := " (%d)" % siblings
+	var font := _list.get_theme_font("font")
+	var font_size := _list.get_theme_font_size("font_size")
+	if font == null:
+		return label + suffix
+
+	# A couple of pixels in hand, so this trim lands before the ItemList's own
+	# backstop trim does and the suffix survives.
+	var budget := float(_list.fixed_column_width) - 10.0 - _width(font, font_size, suffix)
+	if _width(font, font_size, label) <= budget:
+		return label + suffix
+
+	var ellipsis := "..."
+	budget -= _width(font, font_size, ellipsis)
+	# Longest prefix that still fits, by bisection -- character-by-character is
+	# 3,291 measurements per repopulate and this runs on every keystroke.
+	var lo := 0
+	var hi := label.length()
+	while lo < hi:
+		var mid := (lo + hi + 1) / 2
+		if _width(font, font_size, label.substr(0, mid)) <= budget:
+			lo = mid
+		else:
+			hi = mid - 1
+	return label.substr(0, lo) + ellipsis + suffix
+
+
+func _width(font: Font, font_size: int, text: String) -> float:
+	return font.get_string_size(text, HORIZONTAL_ALIGNMENT_LEFT, -1, font_size).x
+
+
+func _process(_delta: float) -> void:
+	var budget := ICONS_PER_FRAME
+	while budget > 0 and not _pending.is_empty():
+		var job: Array = _pending.pop_front()
+		var texture := _load_icon(job[1])
+		if texture != null and job[0] < _list.item_count:
+			_list.set_item_icon(job[0], texture)
+		budget -= 1
+	if _pending.is_empty():
+		set_process(false)
+
+
+func _load_icon(res_path: String) -> Texture2D:
+	if _icon_cache.has(res_path):
+		return _icon_cache[res_path]
+	var image := Image.new()
+	# globalize_path because these are ignored by the importer and therefore
+	# are not resources; load_from_file on the real OS path is the way in.
+	if image.load(ProjectSettings.globalize_path(res_path)) != OK:
+		_icon_cache[res_path] = null
+		return null
+	image.resize(_icon_px, _icon_px, Image.INTERPOLATE_LANCZOS)
+	var texture := ImageTexture.create_from_image(image)
+	_icon_cache[res_path] = texture
+	return texture
+
+
+func _on_selected(index: int) -> void:
+	if index >= _shown.size():
+		return
+	var text := Catalog.describe(_shown[index])
+	if _shown[index].get("family_count", 0) > 1:
+		# The gesture is not discoverable on its own, so the details pane says so
+		# whenever a tile stands for more than the mesh it is showing.
+		text += "  —  right-click to choose a variant"
+	_details.text = text
+
+
+func _on_activated(index: int) -> void:
+	if index < _shown.size():
+		instantiate(_shown[index])
+
+
+## Right-click a grouped tile to reach the variants hiding behind it.
+##
+## Grouping is what makes a 3,291-asset library scannable, but it also puts two
+## thirds of it out of reach: a double-click can only ever place the one mesh the
+## tile happens to show. This is the way to the rest of the family.
+func _on_clicked(index: int, _at: Vector2, mouse_button: int) -> void:
+	if mouse_button != MOUSE_BUTTON_RIGHT or index >= _shown.size():
+		return
+	var asset: Dictionary = _shown[index]
+	_variant_assets = Catalog.family_members(_filtered, asset.get("family", ""), asset.get("kit", ""))
+	if _variant_assets.size() < 2:
+		return
+
+	_variants.clear()
+	for i in _variant_assets.size():
+		var member: Dictionary = _variant_assets[i]
+		var icon := _load_icon(Catalog.thumbnail_path(member))
+		var label: String = member.get("name", "?")
+		if icon != null:
+			_variants.add_icon_item(icon, label, i)
+		else:
+			_variants.add_item(label, i)
+		_variants.set_item_tooltip(_variants.get_item_index(i),
+			Catalog.describe(member))
+	_variants.reset_size()
+	_variants.position = Vector2i(get_screen_position() + get_local_mouse_position())
+	_variants.popup()
+
+
+func _on_variant_chosen(id: int) -> void:
+	if id < _variant_assets.size():
+		instantiate(_variant_assets[id])
+
+
+## Add the mesh to the edited scene as a child of its root, undoable in one step.
+##
+## Reached by double-clicking a tile, or Enter on a selected one.
+func instantiate(asset: Dictionary) -> void:
+	var missing := PackedStringArray(asset.get("unmet_deps", PackedStringArray()))
+	if missing.size() > 0:
+		# Refused rather than placed half-built: loading it is what logs one
+		# "Failed loading resource" per absent prop, and the node that lands
+		# is a building missing its dressing with nothing on it saying so.
+		_status.text = "%s needs kits that are not checked out: %s" % [
+			asset.get("name", "?"), ", ".join(missing)]
+		_status.add_theme_color_override("font_color", UNAVAILABLE_COLOR)
+		return
+	var root := _edited_root()
+	if root == null:
+		# Loud, in the line the eye already goes to for counts. The old message
+		# went to the details label and was effectively invisible.
+		_status.text = "Nothing to place into — open a scene first."
+		_status.add_theme_color_override("font_color", UNAVAILABLE_COLOR)
+		return
+	var packed: PackedScene = load(asset.get("path", ""))
+	if packed == null:
+		_details.text = "Could not load %s" % asset.get("path", "")
+		return
+	var node := packed.instantiate()
+	node.name = asset.get("name", "Mesh")
+
+	var undo := EditorInterface.get_editor_undo_redo()
+	undo.create_action("Add %s" % node.name)
+	undo.add_do_method(root, "add_child", node, true)
+	undo.add_do_method(node, "set_owner", root)
+	undo.add_do_reference(node)
+	undo.add_undo_method(root, "remove_child", node)
+	undo.commit_action()
+	EditorInterface.get_selection().clear()
+	EditorInterface.get_selection().add_node(node)
+	_details.text = "Added %s" % node.name

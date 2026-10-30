@@ -17,7 +17,6 @@ var _materials: Array[ShaderMaterial] = []
 var _renewal: Tween
 var _renewing: bool = false
 var _new_growth: Node3D
-var _flash: float = 0.0
 @onready var drainable: Drainable = $Drainable
 @onready var visual: Node3D = $Visual
 @onready var label: Label3D = $Label3D
@@ -50,22 +49,12 @@ func _ready() -> void:
 	label.position.y = dimensions.y + 1.0
 	drainable.drained.connect(_on_drained)
 	_update_label()
-	set_process(false)
-
-func _process(delta: float) -> void:
-	_flash = move_toward(_flash, 0.0, delta * 2.0)
-	for material: ShaderMaterial in _materials:
-		material.set_shader_parameter("drain_flash", _flash)
-	if is_zero_approx(_flash):
-		set_process(false)
 
 func _on_drained(_amount: float) -> void:
 	if _renewing:
 		return
 	var fraction: float = drainable.remaining_capacity / drainable.capacity
 	_set_life_fraction(fraction)
-	_flash = 0.65
-	set_process(true)
 	_update_label()
 
 func renew(duration: float) -> void:
@@ -74,10 +63,6 @@ func renew(duration: float) -> void:
 		_renewal.kill()
 	label.text = target_label + (" · new growth" if target_label != "Barn" else " · reclaimed")
 	label.modulate = Color("bad5a1")
-	_flash = 0.0
-	for material: ShaderMaterial in _materials:
-		material.set_shader_parameter("drain_flash", 0.0)
-	set_process(false)
 	if duration <= 0.0:
 		_set_renewal(1.0)
 		return

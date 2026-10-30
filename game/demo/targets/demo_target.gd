@@ -48,7 +48,6 @@ func _ready() -> void:
 	_update_label()
 
 func _process(delta: float) -> void:
-	var previous_active_time: float = _active_time
 	_active_time = maxf(0.0, _active_time - delta)
 	var camera: Camera3D = get_viewport().get_camera_3d()
 	var close: bool = false
@@ -58,9 +57,6 @@ func _process(delta: float) -> void:
 		var nearest: Vector3 = camera_local.clamp(bounds.position, bounds.end)
 		close = camera_local.distance_to(nearest) < 7.0
 	_label.visible = not _renewing and (_active_time > 0.0 or (close and not drainable.is_depleted))
-	if previous_active_time > 0.0:
-		for material: ShaderMaterial in _materials:
-			material.set_shader_parameter("drain_flash", minf(_active_time, 0.3))
 
 func _collect_materials() -> void:
 	var shared: Dictionary[Material, ShaderMaterial] = {}
@@ -111,4 +107,3 @@ func renew(duration: float) -> void:
 func _set_renewal(fraction: float) -> void:
 	for material: ShaderMaterial in _materials:
 		material.set_shader_parameter("freshening", fraction)
-		material.set_shader_parameter("drain_flash", 0.0)

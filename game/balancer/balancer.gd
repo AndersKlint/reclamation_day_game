@@ -29,7 +29,6 @@ var effective_drain_rate: float:
 @onready var camera: Camera3D = $CameraRig/SpringArm3D/Camera3D
 @onready var drain_area: Area3D = $DrainArea
 @onready var body_shape: CollisionShape3D = $CollisionShape3D
-@onready var reach_visual: MeshInstance3D = $ReachVisual
 @onready var visuals: Node3D = $Visuals
 @onready var drain_vfx: Node3D = $DrainVfx
 @onready var collection_point: Marker3D = $CollectionPoint
@@ -99,7 +98,6 @@ func _refresh_growth() -> void:
 	drain_area.drain_rate = effective_drain_rate
 	drain_area.set_reach(effective_drain_reach)
 	camera_rig.target_size = size
-	reach_visual.scale = Vector3(effective_drain_reach, 1.0, effective_drain_reach)
 	if not _geometry_update_pending:
 		_geometry_update_pending = true
 		_apply_growth_geometry.call_deferred()

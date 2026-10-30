@@ -1,4 +1,4 @@
-[gd_scene load_steps=9 format=3]
+[gd_scene load_steps=10 format=3]
 [ext_resource type="PackedScene" path="res://game/balancer/balancer.tscn" id="1"]
 [ext_resource type="PackedScene" path="res://game/world/rural_region.tscn" id="2"]
 [ext_resource type="Script" path="res://game/run/run.gd" id="3"]
@@ -6,6 +6,7 @@
 [ext_resource type="PackedScene" path="res://game/ui/interface.tscn" id="5"]
 [ext_resource type="Script" path="res://game/upgrades/upgrade_tracker.gd" id="6"]
 [ext_resource type="PackedScene" path="res://game/rebirth/life_release.tscn" id="7"]
+[ext_resource type="PackedScene" path="res://game/music/background_music.tscn" id="8_music"]
 [sub_resource type="Environment" id="env"]
 background_mode = 1
 background_color = Color(0.3, 0.36, 0.4, 1)
@@ -47,6 +48,7 @@ process_mode = 3
 process_mode = 1
 [node name="WorldEnvironment" type="WorldEnvironment" parent="."]
 environment = SubResource("env")
+[node name="BackgroundMusic" parent="." instance=ExtResource("8_music")]
 [node name="Sun" type="DirectionalLight3D" parent="."]
 rotation = Vector3(-0.9, -0.5, 0)
 light_color = Color(1, 0.9, 0.74, 1)

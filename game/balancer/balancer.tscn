@@ -1,4 +1,4 @@
-[gd_scene load_steps=11 format=3]
+[gd_scene load_steps=9 format=3]
 
 [ext_resource type="Script" path="res://game/balancer/balancer.gd" id="1"]
 [ext_resource type="Script" path="res://game/balancer/follow_camera.gd" id="2"]
@@ -8,12 +8,6 @@
 [sub_resource type="SphereShape3D" id="reach"]
 resource_local_to_scene = true
 radius = 2.8
-[sub_resource type="TorusMesh" id="ring"]
-inner_radius = 0.97
-outer_radius = 1.0
-[sub_resource type="StandardMaterial3D" id="ring_material"]
-shading_mode = 0
-albedo_color = Color(0.3, 0.65, 0.61, 1)
 [sub_resource type="SphereShape3D" id="camera_shape"]
 radius = 0.25
 [sub_resource type="CapsuleShape3D" id="body"]
@@ -56,7 +50,3 @@ script = ExtResource("3")
 [node name="CollisionShape3D" type="CollisionShape3D" parent="DrainArea"]
 position = Vector3(0, 0.7, 0)
 shape = SubResource("reach")
-[node name="ReachVisual" type="MeshInstance3D" parent="."]
-position = Vector3(0, 0.08, 0)
-mesh = SubResource("ring")
-material_override = SubResource("ring_material")
