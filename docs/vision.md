@@ -4,13 +4,15 @@
 
 Earth has passed an environmental tipping point. The Balancer, a melancholy shadow-like spirit, appears without explanation. Its presence draws in surrounding life: the world decays behind it while the spirit grows larger and more powerful. Humans resist, from farmers to organized forces and eventually aircraft and nuclear weapons. The player should feel increasingly overwhelming without victory becoming automatic.
 
-The reveal is renewal. Destruction has gathered the means for a new beginning: the Balancer releases the accumulated life back into the world as vegetation and returning wildlife.
+The long-term reveal remains undecided; renewal through the Balancer releasing accumulated life as vegetation and returning wildlife is one possibility.
 
 ## Current demo
 
 One seamless rural region: large southern fields, an orchard/farm approach, and a contemporary European village to the north, targeting 15–20 minutes without a timer. The village is freely accessible from the start; local human resistance, not a progression gate, supplies danger. Approach and retreat remain real choices.
 
 Play is mouse-orbit third person. The Balancer moves camera-relative, turns toward movement, and drains nearby eligible life automatically. Absorbed life increases size and reach; larger targets require prior growth. Upgrade choices appear at growth thresholds. Human attacks can end the run. The objective is the finite life placed in the region: drain it to near completion to trigger a brief renewal, while spawned humans yield growth but do not count toward that objective. Retry starts a fresh run. Permanent progression is deferred.
+
+All fully drained targets collapse into remains: wooden vegetation, humanoids, or rubble for structures and rocks. Remains scale in count and size with the drained target. Renewal of collapsed targets is deferred.
 
 Tone is dark and melancholy, with a shadowy, grim-reaper-like silhouette; the spirit's origin stays open to religious or evolutionary interpretation. Presentation is fixed dawn/sunrise twilight: an orange sun and warm low horizon against a cold blue-gray upper sky. Mist is a low world-space layer, so horizon paths fade while upward views keep a clearer sky; lamps diffuse and disappear with distance. No day-night cycle.
 

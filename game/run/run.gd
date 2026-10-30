@@ -41,7 +41,7 @@ func _ready() -> void:
 	for point: Node in region.get_node("SpawnPoints").get_children():
 		if point is Node3D:
 			spawn_points.append(point)
-	human_director.configure(balancer, spawn_points)
+	human_director.configure(balancer, spawn_points, Callable(region, "ground_position"))
 	if regional_encounters:
 		human_director.configure_region(region)
 	_on_health_changed(balancer.health, balancer.max_health)

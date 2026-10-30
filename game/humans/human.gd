@@ -1,5 +1,9 @@
 extends CharacterBody3D
 
+const DEPLETION_EFFECT: PackedScene = preload("res://game/draining/depletion_effect.tscn")
+const DEPLETION_SCRIPT = preload("res://game/draining/depletion_effect.gd")
+const BODY_SIZE: Vector3 = Vector3(0.7, 1.8, 0.7)
+
 @export var ranged: bool = false
 @export var movement_speed: float = 3.7
 @export var attack_range: float = 2.3
@@ -27,6 +31,8 @@ var _region: Node3D
 var _target_left: float = 0.0
 var _returning: bool = false
 var _warning_material: StandardMaterial3D
+var _remains_parent: Node3D
+var _ground_position: Callable
 @onready var drainable: Area3D = $Drainable
 @onready var _warning: MeshInstance3D = $Warning
 @onready var _navigation: NavigationAgent3D = $NavigationAgent3D
@@ -40,6 +46,10 @@ func configure_region(region: Node3D, zone: StringName, home: Vector3) -> void:
 func configure(balancer: CharacterBody3D) -> void:
 	_balancer = balancer
 	_active = true
+
+func configure_remains(remains_parent: Node3D, ground_position: Callable) -> void:
+	_remains_parent = remains_parent
+	_ground_position = ground_position
 
 func _ready() -> void:
 	drainable.capacity = life_capacity
@@ -215,5 +225,20 @@ func _resolve_attack() -> void:
 
 func _on_depleted() -> void:
 	stop()
-	# Deferred deletion preserves Drainable's in-flight drain return value.
+	collision_layer = 0
+	collision_mask = 0
+	for node: Node in _visual.find_children("*", "AnimationPlayer", true, false):
+		(node as AnimationPlayer).pause()
+	_create_remains.call_deferred()
+
+func _create_remains() -> void:
+	if is_instance_valid(_remains_parent) and _remains_parent.is_inside_tree():
+		var effect: Node3D = DEPLETION_EFFECT.instantiate() as Node3D
+		effect.process_mode = Node.PROCESS_MODE_PAUSABLE
+		_remains_parent.add_child(effect)
+		effect.global_transform = Transform3D(Basis.IDENTITY, global_position)
+		effect.style = DEPLETION_SCRIPT.Style.HUMANOID
+		_visual.reparent(effect, true)
+		effect.configure(_visual, BODY_SIZE, _ground_position)
+		effect.start()
 	queue_free()

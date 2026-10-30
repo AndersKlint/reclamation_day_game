@@ -37,6 +37,7 @@ var _spawn_left: float = 0.0
 var _next_spawn: int = 0
 var _random: RandomNumberGenerator = RandomNumberGenerator.new()
 var _region: Node3D
+var _ground_position: Callable
 var _zone: StringName = &""
 var _progress_tier: int = 0
 var _zone_time: float = 0.0
@@ -49,10 +50,11 @@ func configure_region(region: Node3D) -> void:
 	_zone = &""
 	_zone_time = 0.0
 
-func configure(balancer: CharacterBody3D, spawn_points: Array[Node3D]) -> void:
+func configure(balancer: CharacterBody3D, spawn_points: Array[Node3D], ground_position: Callable) -> void:
 	stop()
 	_balancer = balancer
 	_spawn_points.assign(spawn_points)
+	_ground_position = ground_position
 	_next_spawn = 0
 
 func set_progress(drained: float, initial: float) -> void:
@@ -84,7 +86,8 @@ func stop() -> void:
 	for human: CharacterBody3D in _humans:
 		if is_instance_valid(human):
 			human.stop()
-			human.queue_free()
+			if not human.drainable.is_depleted:
+				human.queue_free()
 	_humans.clear()
 
 func _physics_process(delta: float) -> void:
@@ -164,7 +167,7 @@ func _spawn_human() -> void:
 				continue
 		var occupied: bool = false
 		for existing: CharacterBody3D in _humans:
-			if existing.global_position.distance_to(point.global_position) < spawn_spacing:
+			if is_instance_valid(existing) and not existing.is_queued_for_deletion() and existing.global_position.distance_to(point.global_position) < spawn_spacing:
 				occupied = true
 				break
 		if occupied:
@@ -181,6 +184,7 @@ func _spawn_human() -> void:
 			human.life_capacity = ranged_capacity
 			human.required_size = ranged_required_size
 		human.configure(_balancer)
+		human.configure_remains(get_parent() as Node3D, _ground_position)
 		if _region != null:
 			human.configure_region(_region, _zone, spawn_position)
 			human.home_leash = home_leash

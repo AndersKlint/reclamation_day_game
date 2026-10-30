@@ -48,7 +48,7 @@ func _physics_process(delta: float) -> void:
 	for index: int in _people.size():
 		_cursor = (_cursor + 1) % _people.size()
 		var person: Civilian = _people[_cursor]
-		if is_instance_valid(person) and not person.is_queued_for_deletion() and person.plan_due:
+		if is_instance_valid(person) and not person.is_queued_for_deletion() and person.active and person.plan_due:
 			_plan(person, map)
 			break
 
@@ -69,6 +69,8 @@ func _spawn(map: RID) -> void:
 		if not _clear(point):
 			continue
 		var person: Civilian = CIVILIAN.instantiate() as Civilian
+		var ground_position: Callable = Callable(_region, "ground_position") if is_instance_valid(_region) and _region.has_method("ground_position") else Callable()
+		person.configure_remains(get_parent() as Node3D, ground_position)
 		add_child(person)
 		person.global_position = point + Vector3.UP * 0.08
 		person.configure(_player, MODELS[_people.size() % MODELS.size()])

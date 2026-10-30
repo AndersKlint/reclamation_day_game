@@ -74,6 +74,22 @@ func gain_life(amount: float) -> void:
 	_refresh_growth()
 	growth_changed.emit(life, size)
 
+func _unhandled_input(event: InputEvent) -> void:
+	if not gameplay_enabled:
+		return
+	if event.is_action_pressed(&"debug_increase_life"):
+		adjust_life(500.0)
+	elif event.is_action_pressed(&"debug_decrease_life"):
+		adjust_life(-500.0)
+
+func adjust_life(amount: float) -> void:
+	if health <= 0.0:
+		return
+	life = maxf(0.0, life + amount)
+	size = minf(maximum_size, 1.0 + life / life_per_size)
+	_refresh_growth()
+	growth_changed.emit(life, size)
+
 func take_damage(amount: float) -> void:
 	if amount <= 0.0 or health <= 0.0 or not gameplay_enabled:
 		return

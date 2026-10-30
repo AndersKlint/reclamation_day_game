@@ -108,6 +108,13 @@ func ground_height(x: float, z: float) -> float:
 		return a + (b - a) * u + (c - a) * v
 	return d + (c - d) * (1.0 - u) + (b - d) * (1.0 - v)
 
+func ground_position(world_point: Vector3) -> Vector3:
+	var local_point: Vector3 = to_local(world_point)
+	local_point.y = ground_height(local_point.x, local_point.z)
+	if _on_road(Vector2(local_point.x, local_point.z), 0.0):
+		local_point.y += 0.065
+	return to_global(local_point)
+
 func _material(color: Color, texture: Texture2D = null) -> StandardMaterial3D:
 	var material: StandardMaterial3D = StandardMaterial3D.new()
 	material.albedo_color = color
@@ -186,6 +193,7 @@ func _ribbon(points: Array[Vector2], half_width: float, material: Material, labe
 
 func _place_target(kind: StringName, location: Vector3, dimensions: Vector3, capacity: float, gate: float, yaw: float = 0.0) -> Node3D:
 	var target: Node3D = Catalog.instantiate_target(kind, dimensions, capacity, gate)
+	target.ground_position = ground_position
 	target.position = Vector3(location.x, ground_height(location.x, location.z), location.z)
 	target.rotation.y = yaw
 	target.set_meta(&"zone", get_zone_at(to_global(target.position)))

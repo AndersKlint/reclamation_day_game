@@ -2,12 +2,18 @@ extends RefCounted
 
 const Scenery = preload("res://game/demo/targets/demo_scenery.gd")
 const Target = preload("res://game/demo/targets/demo_target.gd")
+const DepletionEffect = preload("res://game/draining/depletion_effect.gd")
 const ROOT: String = "res://available-assets/retro3d-assets/"
 const Forest = preload("res://game/demo/world/forest_assets.gd")
 
 static func instantiate_target(kind: StringName, dimensions: Vector3, capacity: float, required_size: float) -> Node3D:
 	var wrapper: Target = Target.new()
 	_configure(wrapper, kind, dimensions)
+	match kind:
+		&"bush", &"bush_alt", &"tree", &"tree_alt", &"pine", &"forest_tree1", &"forest_tree2", &"forest_tree3", &"forest_tree4", &"forest_trunk":
+			wrapper.depletion_style = DepletionEffect.Style.WOODEN
+		_:
+			wrapper.depletion_style = DepletionEffect.Style.RUBBLE
 	if String(kind).contains("tree"):
 		wrapper.blocking = true
 	wrapper.configure_drain(capacity, required_size)

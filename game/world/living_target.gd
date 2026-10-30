@@ -1,6 +1,8 @@
 extends Node3D
 
 const Drainable = preload("res://game/draining/drainable.gd")
+const DepletionEffect = preload("res://game/draining/depletion_effect.gd")
+const DEPLETION_EFFECT: PackedScene = preload("res://game/draining/depletion_effect.tscn")
 const WorldModel = preload("res://game/world/world_model.gd")
 const WITHER_SHADER: Shader = preload("res://game/world/wither.gdshader")
 const MEADOW_MODEL: PackedScene = preload("res://available-assets/retro3d-assets/Nature/tree_pack_1.1/models/bush02.fbx")
@@ -17,6 +19,10 @@ var _materials: Array[ShaderMaterial] = []
 var _renewal: Tween
 var _renewing: bool = false
 var _new_growth: Node3D
+var blocking_collision: CollisionShape3D
+var ground_position: Callable
+var _depletion_effect: DepletionEffect
+var _collapsed: bool = false
 @onready var drainable: Drainable = $Drainable
 @onready var visual: Node3D = $Visual
 @onready var label: Label3D = $Label3D
@@ -31,6 +37,10 @@ func _ready() -> void:
 		model_scene = BARN_MODEL
 	_add_model(model_scene, visual, dimensions)
 	_collect_materials(visual)
+	_depletion_effect = DEPLETION_EFFECT.instantiate() as DepletionEffect
+	_depletion_effect.style = DepletionEffect.Style.RUBBLE if target_label == "Barn" else DepletionEffect.Style.WOODEN
+	add_child(_depletion_effect)
+	_depletion_effect.configure(visual, dimensions, ground_position)
 	_set_life_fraction(drainable.remaining_capacity / drainable.capacity)
 	if target_label == "Barn":
 		_new_growth = Node3D.new()
@@ -48,7 +58,19 @@ func _ready() -> void:
 	$Drainable/CollisionShape3D.shape = shape
 	label.position.y = dimensions.y + 1.0
 	drainable.drained.connect(_on_drained)
+	drainable.depleted.connect(_on_depleted)
 	_update_label()
+
+func _on_depleted() -> void:
+	_collapsed = true
+	_start_depletion.call_deferred()
+
+func _start_depletion() -> void:
+	label.hide()
+	set_process(false)
+	if is_instance_valid(blocking_collision):
+		blocking_collision.set_deferred("disabled", true)
+	_depletion_effect.start()
 
 func _on_drained(_amount: float) -> void:
 	if _renewing:
@@ -58,6 +80,8 @@ func _on_drained(_amount: float) -> void:
 	_update_label()
 
 func renew(duration: float) -> void:
+	if _collapsed or drainable.is_depleted:
+		return
 	_renewing = true
 	if _renewal != null:
 		_renewal.kill()

@@ -67,12 +67,24 @@ func _place_target(title: String, point: Vector2, capacity: float, required_size
 	target.dimensions = dimensions
 	target.target_label = title
 	target.living_color = color
+	target.ground_position = ground_position
+	if title == "Barn":
+		target.blocking_collision = $BarnCollision/CollisionShape3D
 	var component: Area3D = target.get_node("Drainable")
 	component.capacity = capacity
 	component.required_size = required_size
 	component.drained.connect(_on_target_drained)
 	initial_capacity += capacity
 	$Drainables.add_child(target)
+
+func ground_position(world_point: Vector3) -> Vector3:
+	var local_point: Vector3 = to_local(world_point)
+	local_point.y = 0.0
+	if absf(local_point.x) <= 42.5 and absf(local_point.z + 10.0) <= 3.0:
+		local_point.y = 0.05
+	elif absf(local_point.x) <= 4.5 and absf(local_point.z) <= 45.0:
+		local_point.y = 0.03
+	return to_global(local_point)
 
 func _on_target_drained(amount: float) -> void:
 	drained_capacity = minf(initial_capacity, drained_capacity + amount)
