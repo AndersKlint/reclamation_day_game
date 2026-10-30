@@ -37,7 +37,9 @@
 
 ## Media assets
 
-- Search **`available-assets/` first** for models, textures, and other media, including `random-packs/`; search **`available-music/`** for music. These local libraries are Git-ignored but searchable through `.ignore`. Start with `available-assets/retro3d-assets/README.md` for the upstream collection.
+- **Asset discovery:** When a task needs models, textures, SFX, or music, check existing game usage, then consult `docs/assets.md` and search `available-assets/` before creating replacement media or sourcing downloads. The catalog routes searches across `sfx/`, `music/`, `random-packs/`, and `retro3d-assets/`; local packs are searchable through `.ignore`.
+- **Filename-first:** Search directory/file names and existing indexes with relevant terms and synonyms. Exclude import sidecars, generated caches, and thumbnails from discovery results. Group numbered variants and alternate formats; shortlist a few candidates and confirm their source files exist.
+- **Progressive inspection:** Read documentation and metadata for shortlisted candidates. Preview or audition only when needed to resolve suitability and permitted by the task. Treat filename-based matches as candidates, not verified visual/audio matches; broad thumbnail generation is outside routine discovery.
 - `available-assets/retro3d-assets/` is a Git submodule. Treat it as upstream source material; keep game-specific scenes, materials, and adaptations outside it.
 - Reuse suitable assets through Godot resources and wrapper scenes. Keep source paths and texture dependencies intact; avoid copying the entire collection into another directory.
-- Use the `assets-pipeline` skill when import settings or asset conversion are involved. Verify assets in-engine for scale, orientation, materials, and collision needs.
+- Use the `assets-pipeline` skill when import settings or asset conversion are involved. Perform technical checks on selected assets for import, scale, orientation, materials, and collision needs; developer playtesting owns visual/audio approval.

@@ -31,6 +31,8 @@ var effective_drain_rate: float:
 @onready var body_shape: CollisionShape3D = $CollisionShape3D
 @onready var visuals: Node3D = $Visuals
 @onready var drain_vfx: Node3D = $DrainVfx
+@onready var drain_audio: AudioStreamPlayer = $DrainAudio
+@onready var footsteps: Node = $Footsteps
 @onready var collection_point: Marker3D = $CollectionPoint
 @onready var camera_rig: Node3D = $CameraRig
 
@@ -38,6 +40,7 @@ func _ready() -> void:
 	body_shape.shape = body_shape.shape.duplicate()
 	health = max_health
 	drain_area.life_absorbed.connect(gain_life)
+	drain_area.life_absorbed.connect(drain_audio.record_transfer)
 	drain_vfx.configure(collection_point)
 	# Presentation callbacks must run after the drain reward transaction completes.
 	drain_area.transfer_effect_requested.connect(drain_vfx.record_transfer, CONNECT_DEFERRED)
@@ -47,6 +50,7 @@ func _ready() -> void:
 func _physics_process(delta: float) -> void:
 	if not gameplay_enabled or Input.mouse_mode != Input.MOUSE_MODE_CAPTURED:
 		velocity = Vector3.ZERO
+		footsteps.reset_cadence()
 		return
 	var input: Vector2 = Input.get_vector(&"move_left", &"move_right", &"move_forward", &"move_backward")
 	var direction: Vector3 = camera_rig.global_basis * Vector3(input.x, 0.0, input.y)
@@ -57,7 +61,9 @@ func _physics_process(delta: float) -> void:
 	velocity.z = move_toward(velocity.z, direction.z * effective_movement_speed, acceleration * delta)
 	if not is_on_floor():
 		velocity += get_gravity() * delta
+	var previous_position: Vector3 = global_position
 	move_and_slide()
+	footsteps.record_movement(previous_position)
 
 func set_gameplay_enabled(enabled: bool) -> void:
 	gameplay_enabled = enabled and health > 0.0
@@ -65,6 +71,8 @@ func set_gameplay_enabled(enabled: bool) -> void:
 	camera_rig.set_gameplay_enabled(gameplay_enabled)
 	drain_area.enabled = gameplay_enabled
 	drain_vfx.set_enabled(gameplay_enabled)
+	drain_audio.set_enabled(gameplay_enabled)
+	footsteps.set_enabled(gameplay_enabled)
 
 func gain_life(amount: float) -> void:
 	if amount <= 0.0 or health <= 0.0:

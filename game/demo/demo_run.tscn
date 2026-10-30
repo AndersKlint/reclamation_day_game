@@ -1,4 +1,4 @@
-[gd_scene load_steps=11 format=3]
+[gd_scene load_steps=12 format=3]
 
 [ext_resource type="Script" path="res://game/run/run.gd" id="1"]
 [ext_resource type="PackedScene" path="res://game/demo/world/demo_region.tscn" id="2"]
@@ -10,6 +10,7 @@
 [ext_resource type="PackedScene" path="res://game/demo/dusk_atmosphere.tscn" id="8"]
 [ext_resource type="Script" path="res://game/humans/civilian_population.gd" id="9"]
 [ext_resource type="PackedScene" path="res://game/music/background_music.tscn" id="10_music"]
+[ext_resource type="Script" path="res://game/demo/world/ground_scorch.gd" id="11_scorch"]
 
 [node name="DemoRun" type="Node3D" node_paths=PackedStringArray("region", "civilian_population")]
 process_mode = 3
@@ -24,8 +25,9 @@ civilian_population = NodePath("CivilianPopulation")
 process_mode = 1
 script = ExtResource("9")
 
-[node name="DemoRegion" parent="." instance=ExtResource("2")]
+[node name="DemoRegion" parent="." node_paths=PackedStringArray("ground_scorch") instance=ExtResource("2")]
 process_mode = 1
+ground_scorch = NodePath("../GroundScorch")
 
 [node name="Balancer" parent="." instance=ExtResource("3")]
 process_mode = 1
@@ -52,3 +54,9 @@ process_mode = 1
 [node name="DuskAtmosphere" parent="." instance=ExtResource("8")]
 
 [node name="BackgroundMusic" parent="." instance=ExtResource("10_music")]
+
+[node name="GroundScorch" type="Node" parent="." node_paths=PackedStringArray("region", "balancer")]
+process_mode = 1
+script = ExtResource("11_scorch")
+region = NodePath("../DemoRegion")
+balancer = NodePath("../Balancer")

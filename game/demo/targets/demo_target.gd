@@ -74,7 +74,7 @@ func _collect_materials() -> void:
 	for mesh: MeshInstance3D in WorldModel.meshes(visual):
 		for surface: int in mesh.mesh.get_surface_count():
 			var source: BaseMaterial3D = mesh.get_active_material(surface) as BaseMaterial3D
-			if source == null:
+			if source == null or source.emission_enabled:
 				continue
 			if not shared.has(source):
 				var material: ShaderMaterial = ShaderMaterial.new()
@@ -109,6 +109,8 @@ func _on_depleted() -> void:
 func _start_depletion() -> void:
 	_label.hide()
 	set_process(false)
+	for light: Node in visual.find_children("*", "Light3D", true, false):
+		(light as Light3D).visible = false
 	var collision: CollisionShape3D = get_node_or_null("Body/CollisionShape3D") as CollisionShape3D
 	if collision != null:
 		collision.set_deferred("disabled", true)

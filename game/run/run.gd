@@ -2,6 +2,7 @@ extends Node3D
 
 const UpgradeDefinition = preload("res://game/upgrades/upgrade_definition.gd")
 const Tracker = preload("res://game/upgrades/upgrade_tracker.gd")
+const GameplaySfx = preload("res://game/run/gameplay_sfx.gd")
 
 enum State { RUNNING, PAUSED, CHOOSING, FAILED, REBIRTH, FINISHED }
 
@@ -22,6 +23,12 @@ var _retry_pending: bool = false
 @onready var upgrades: Tracker = $UpgradeTracker
 @onready var interface: CanvasLayer = $Interface
 @onready var life_release: Node3D = $LifeRelease
+
+func _enter_tree() -> void:
+	var sfx: Node3D = GameplaySfx.new()
+	sfx.name = "GameplaySfx"
+	sfx.process_mode = Node.PROCESS_MODE_PAUSABLE
+	add_child(sfx)
 
 func _ready() -> void:
 	get_tree().paused = false

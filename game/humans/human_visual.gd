@@ -8,11 +8,13 @@ const GUN_TEXTURE: Texture2D = preload("res://available-assets/retro3d-assets/Ch
 
 var _character: CHARACTER
 var _ranged: bool = false
+var female_voice: bool = false
 
 func configure(ranged: bool) -> void:
 	_ranged = ranged
 	var variants: Array[String] = POLICE if ranged else CIVILIANS
 	var path: String = variants.pick_random()
+	female_voice = path.begins_with("Female/")
 	_character = CHARACTER.new()
 	add_child(_character)
 	_character.configure(path, path.get_file(), 1.8)

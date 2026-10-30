@@ -6,6 +6,8 @@ signal navigation_became_ready()
 const Catalog = preload("res://game/demo/targets/demo_asset_catalog.gd")
 const Dressing = preload("res://game/demo/world/region_dressing.gd")
 const Forest = preload("res://game/demo/world/forest_assets.gd")
+const CoverPatch = preload("res://game/demo/world/cover_patch.gd")
+const COVER_FADE_SHADER: Shader = preload("res://game/demo/world/ground_cover_fade.gdshader")
 const GROUND = preload("res://available-assets/retro3d-assets/Buildings/Abandoned House/Textures/groundgrass.png")
 const GRASS = preload("res://available-assets/retro3d-assets/Nature/Materials/grass_bush_1.png")
 const STEP: float = 2.0
@@ -28,6 +30,9 @@ var initial_capacity: float = 0.0
 var drained_capacity: float = 0.0
 var navigation_ready: bool = false
 var _targets: Array[Node3D] = []
+var _buildings: Array[Node3D] = []
+var _cover: Dictionary = {}
+@export var ground_scorch: Node
 var _spawn_points: Array[Node3D] = []
 var _rng: RandomNumberGenerator = RandomNumberGenerator.new()
 var _navigation: NavigationRegion3D
@@ -36,6 +41,7 @@ var _decoration: Node3D
 var _target_root: Node3D
 var _spawn_root: Node3D
 var _grass_material: StandardMaterial3D
+var _grass_fade_material: ShaderMaterial
 var _renew_tween: Tween
 
 func _ready() -> void:
@@ -52,6 +58,7 @@ func _ready() -> void:
 	_build_spawns()
 	_build_grass()
 	Forest.populate(self, _decoration)
+	_finish_cover()
 	Dressing.populate(self, _decoration)
 	_build_perimeter()
 	_begin_navigation.call_deferred()
@@ -77,13 +84,15 @@ func get_zone_at(world_position: Vector3) -> StringName:
 	return &"field"
 
 func renew(duration: float) -> void:
+	if ground_scorch != null:
+		ground_scorch.renew(duration)
 	for target: Node3D in _targets:
 		target.renew(duration)
 	if _renew_tween != null and _renew_tween.is_valid():
 		_renew_tween.kill()
 	_renew_tween = create_tween().set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_IN_OUT)
-	_renew_tween.tween_property(_grass_material, "albedo_color", Color(0.57, 0.78, 0.49), maxf(duration, 0.01))
-	_renew_tween.tween_property(_grass_material, "albedo_color", Color(0.65, 0.68, 0.47), 3.0)
+	_renew_tween.tween_property(_grass_fade_material, "shader_parameter/base_color", Color(0.57, 0.78, 0.49), maxf(duration, 0.01))
+	_renew_tween.tween_property(_grass_fade_material, "shader_parameter/base_color", Color(0.65, 0.68, 0.47), 3.0)
 
 func _height_sample(x: float, z: float) -> float:
 	var rolling: float = 1.5 * sin(x * 0.025) * sin(z * 0.021) + 0.65 * cos(z * 0.035)
@@ -197,21 +206,21 @@ func _place_target(kind: StringName, location: Vector3, dimensions: Vector3, cap
 	target.position = Vector3(location.x, ground_height(location.x, location.z), location.z)
 	target.rotation.y = yaw
 	target.set_meta(&"zone", get_zone_at(to_global(target.position)))
+	_register_target(target, capacity)
+	return target
+
+func _register_target(target: Node3D, capacity: float) -> void:
 	target.get_node("Drainable").drained.connect(_on_drained)
 	initial_capacity += capacity
 	_targets.append(target)
 	_target_root.add_child(target)
-	return target
 
 func _on_drained(amount: float) -> void:
 	drained_capacity = minf(initial_capacity, drained_capacity + amount)
 	progress_changed.emit(drained_capacity, initial_capacity)
 
 func _scenery(kind: StringName, position_xz: Vector2, dimensions: Vector3) -> void:
-	var item: Node3D = Catalog.instantiate_scenery(kind, dimensions)
-	item.position = Vector3(position_xz.x, ground_height(position_xz.x, position_xz.y), position_xz.y)
-	item.rotation.y = _rng.randf_range(-PI, PI)
-	_decoration.add_child(item)
+	_place_target(kind, Vector3(position_xz.x, 0, position_xz.y), dimensions, 4.0, 1.0, _rng.randf_range(-PI, PI))
 
 func _build_settlement() -> void:
 	var wood: Material = _material(Color(0.25, 0.20, 0.14))
@@ -223,17 +232,35 @@ func _build_settlement() -> void:
 		var large: bool = i in [7, 12, 15]
 		var dimensions: Vector3 = Vector3(22, 13, 20) if large else (Vector3(12, 8, 12) if i >= 16 else Vector3(17, 10, 16))
 		var gate: float = 2.5 if i < 6 else (3.0 if i < 10 else (3.5 if i < 14 else 4.0))
-		_place_target(kind, center, dimensions, 90.0 if farm else (100.0 if i < 16 else 43.75), gate, 0.0 if center.x < 0 else PI)
+		_buildings.append(_place_target(kind, center, dimensions, 90.0 if farm else (100.0 if i < 16 else 43.75), gate, 0.0 if center.x < 0 else PI))
 		_box(Vector3(center.x, -0.34, center.z), Vector3(dimensions.x + 0.8, 0.36, dimensions.z + 0.8), stone, true)
 		for offset: float in [-11.0, 11.0]:
 			if not _on_road(Vector2(center.x + offset, center.z + 9.5), 3.0):
-				_box(Vector3(center.x + offset, 0.5, center.z + 9.5), Vector3(0.22, 1.5, 5.0), wood, false)
+				_fence(Vector2(center.x + offset, center.z + 9.5), Vector3(0.22, 1.5, 5.0), wood)
 		for offset: float in [-6.0, 6.0]:
 			if not _on_road(Vector2(center.x + offset, center.z + 12.0), 3.0):
-				_box(Vector3(center.x + offset, 0.5, center.z + 12.0), Vector3(5.0, 1.1, 0.18), wood, false)
+				_fence(Vector2(center.x + offset, center.z + 12.0), Vector3(5.0, 1.1, 0.18), wood)
 		var rock: Vector2 = Vector2(center.x + 12, center.z - 7)
 		if not _on_road(rock, 1.5):
 			_scenery(&"rock", rock, Vector3(1.5, 0.9, 1.5))
+
+func _fence(p: Vector2, dimensions: Vector3, material: Material) -> void:
+	var root: Node3D = Node3D.new()
+	var part: MeshInstance3D = MeshInstance3D.new()
+	var mesh: BoxMesh = BoxMesh.new()
+	mesh.size = dimensions
+	part.mesh = mesh
+	part.material_override = material
+	part.position.y = dimensions.y * 0.5 + 0.5
+	root.add_child(part)
+	part.owner = root
+	var scene: PackedScene = PackedScene.new()
+	scene.pack(root)
+	root.free()
+	var target: Node3D = Catalog.instantiate_model(&"fence", scene, null, dimensions + Vector3(0, 0.5, 0), 2.0, true)
+	target.position = Vector3(p.x, ground_height(p.x, p.y), p.y)
+	target.ground_position = ground_position
+	_register_target(target, 2.0)
 
 func _box(location: Vector3, dimensions: Vector3, material: Material, blocking: bool) -> void:
 	var instance: MeshInstance3D = MeshInstance3D.new()
@@ -344,26 +371,78 @@ func _build_grass() -> void:
 	mesh.material = material
 	for chunk_z: int in range(-170, 170, 34):
 		for chunk_x: int in range(-120, 120, 30):
-			var transforms: Array[Transform3D] = []
 			for i: int in 110:
 				var p: Vector2 = Vector2(chunk_x + _rng.randf_range(0, 30), chunk_z + _rng.randf_range(0, 34))
 				if _clear_route(p):
 					continue
 				var scale_factor: float = _rng.randf_range(0.65, 1.5)
 				var basis: Basis = Basis(Vector3.UP, _rng.randf_range(-PI, PI)).scaled(Vector3.ONE * scale_factor)
-				transforms.append(Transform3D(basis, Vector3(p.x, ground_height(p.x, p.y) + 0.4 * scale_factor, p.y)))
+				_add_cover(mesh, Transform3D(basis, Vector3(p.x, ground_height(p.x, p.y) + 0.4 * scale_factor, p.y)))
+
+func _add_cover(mesh: Mesh, transform: Transform3D) -> void:
+	var key: Vector2i = Vector2i(floori(transform.origin.x / 8.0), floori(transform.origin.z / 8.0))
+	if not _cover.has(key):
+		_cover[key] = {}
+	var batches: Dictionary = _cover[key]
+	if not batches.has(mesh):
+		batches[mesh] = []
+	batches[mesh].append(transform)
+
+func _finish_cover() -> void:
+	var meshes: Dictionary = {}
+	var materials: Dictionary = {}
+	for key: Vector2i in _cover:
+		var p: Vector2 = Vector2(key.x * 8.0 + 4.0, key.y * 8.0 + 4.0)
+		var patch: Node3D = CoverPatch.new()
+		patch.position = Vector3(p.x, ground_height(p.x, p.y), p.y)
+		patch.ground_position = ground_position
+		var batches: Dictionary = _cover[key]
+		var count: int = 0
+		for mesh: Mesh in batches:
+			count += batches[mesh].size()
+		var capacity: float = clampf(count * 1.2, 15.0, 30.0)
+		patch.configure(capacity)
+		for mesh: Mesh in batches:
+			if not meshes.has(mesh):
+				var fade_mesh: Mesh = mesh.duplicate() as Mesh
+				for surface: int in fade_mesh.get_surface_count():
+					var source: BaseMaterial3D = mesh.surface_get_material(surface) as BaseMaterial3D
+					if not materials.has(source):
+						var material: ShaderMaterial = ShaderMaterial.new()
+						material.shader = COVER_FADE_SHADER
+						material.set_shader_parameter("base_color", source.albedo_color)
+						material.set_shader_parameter("albedo_texture", source.albedo_texture)
+						material.set_shader_parameter("albedo_texture_nearest", source.albedo_texture)
+						material.set_shader_parameter("nearest_filter", source.texture_filter == BaseMaterial3D.TEXTURE_FILTER_NEAREST_WITH_MIPMAPS)
+						material.set_shader_parameter("vertex_color", source.vertex_color_use_as_albedo)
+						material.set_shader_parameter("uv_scale", source.uv1_scale)
+						material.set_shader_parameter("uv_offset", source.uv1_offset)
+						material.set_shader_parameter("roughness", source.roughness)
+						material.set_shader_parameter("metallic", source.metallic)
+						if source.transparency == BaseMaterial3D.TRANSPARENCY_ALPHA_SCISSOR:
+							material.set_shader_parameter("alpha_cutoff", source.alpha_scissor_threshold)
+						materials[source] = material
+						if source == _grass_material:
+							_grass_fade_material = material
+					fade_mesh.surface_set_material(surface, materials[source])
+				meshes[mesh] = fade_mesh
+			var transforms: Array = batches[mesh]
 			var multimesh: MultiMesh = MultiMesh.new()
 			multimesh.transform_format = MultiMesh.TRANSFORM_3D
-			multimesh.mesh = mesh
+			multimesh.mesh = meshes[mesh]
 			multimesh.instance_count = transforms.size()
 			for i: int in transforms.size():
-				multimesh.set_instance_transform(i, transforms[i])
+				var transform: Transform3D = transforms[i]
+				transform.origin -= patch.position
+				multimesh.set_instance_transform(i, transform)
 			var instance: MultiMeshInstance3D = MultiMeshInstance3D.new()
 			instance.multimesh = multimesh
 			instance.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
-			instance.visibility_range_end = 95
+			instance.visibility_range_end = 90
 			instance.visibility_range_end_margin = 15
-			_decoration.add_child(instance)
+			patch.visual.add_child(instance)
+		_register_target(patch, capacity)
+	_cover.clear()
 
 func _build_spawns() -> void:
 	var player: Marker3D = Marker3D.new()

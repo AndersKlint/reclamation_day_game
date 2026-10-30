@@ -12,7 +12,7 @@ One seamless rural region: large southern fields, an orchard/farm approach, and 
 
 Play is mouse-orbit third person. The Balancer moves camera-relative, turns toward movement, and drains nearby eligible life automatically. Absorbed life increases size and reach; larger targets require prior growth. Upgrade choices appear at growth thresholds. Human attacks can end the run. The objective is the finite life placed in the region: drain it to near completion to trigger a brief renewal, while spawned humans yield growth but do not count toward that objective. Retry starts a fresh run. Permanent progression is deferred.
 
-All fully drained targets collapse into remains: wooden vegetation, humanoids, or rubble for structures and rocks. Remains scale in count and size with the drained target. Renewal of collapsed targets is deferred.
+Props and ground-cover patches contribute to the finite regional objective alongside larger targets. Ground cover fades as it is drained; fully drained larger targets collapse into remains: wooden vegetation and objects, humanoids, or rubble for structures, rocks and mixed materials. Renewal of collapsed targets is deferred.
 
 Tone is dark and melancholy, with a shadowy, grim-reaper-like silhouette; the spirit's origin stays open to religious or evolutionary interpretation. Presentation is fixed dawn/sunrise twilight: an orange sun and warm low horizon against a cold blue-gray upper sky. Mist is a low world-space layer, so horizon paths fade while upward views keep a clearer sky; lamps diffuse and disappear with distance. No day-night cycle.
 

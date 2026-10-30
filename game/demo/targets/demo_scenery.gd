@@ -9,6 +9,7 @@ var texture: Texture2D
 var frame_texture: Texture2D
 var cutout: bool = false
 var blocking: bool = false
+var preserve_model_lights: bool = false
 var model_yaw: float = 0.0
 var fitted_size: Vector3 = Vector3.ONE
 var visual: Node3D
@@ -20,6 +21,10 @@ func _ready() -> void:
 	visual.name = "Visual"
 	add_child(visual)
 	var model: Node3D = model_scene.instantiate() as Node3D
+	for node: Node in model.find_children("*", "", true, false):
+		if node is Camera3D or (node is Light3D and not preserve_model_lights):
+			node.get_parent().remove_child(node)
+			node.queue_free()
 	visual.add_child(model)
 	model.rotation.y = model_yaw
 	var bounds: AABB

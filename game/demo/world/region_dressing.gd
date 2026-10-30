@@ -1,6 +1,7 @@
 extends RefCounted
 
 const WorldModel = preload("res://game/world/world_model.gd")
+const Catalog = preload("res://game/demo/targets/demo_asset_catalog.gd")
 const MAILBOX = preload("res://available-assets/retro3d-assets/Buildings/Mailbox/LP_Mailbox.fbx")
 const MAILBOX_TEXTURE = preload("res://available-assets/retro3d-assets/Buildings/Mailbox/LP_MailboxBase.png")
 const CRATE = preload("res://available-assets/retro3d-assets/Boxes_Barrels_Crates/crate.fbx")
@@ -36,11 +37,11 @@ static func populate(region: Node3D, parent: Node3D) -> void:
 			var stem: String = entry[1]
 			var scene: PackedScene = load(STREET + asset + "/" + asset + ".fbx") as PackedScene
 			var texture: Texture2D = load(STREET + asset + "/" + stem + ".png") as Texture2D
-			_prop(region, dressing, scene, texture, Vector2(center.x - inward * (10.5 + j * 0.9), center.z - 4), entry[2], i * 0.43 + j)
+			_prop(region, dressing, scene, texture, Vector2(center.x - inward * (10.5 + j * 0.9), center.z - 4), entry[2], i * 0.43 + j, 0.0, asset in ["Сardboard", "Box"])
 		if i % 4 == 0:
-			_prop(region, dressing, BENCH, BENCH_TEXTURE, Vector2(center.x + inward * 11, center.z - 5), Vector3(2.4, 1.3, 1.0), PI * 0.5 * inward)
+			_prop(region, dressing, BENCH, BENCH_TEXTURE, Vector2(center.x + inward * 11, center.z - 5), Vector3(2.4, 1.3, 1.0), PI * 0.5 * inward, 0.0, true)
 		if i % 3 == 0:
-			var building: Node3D = region._targets[i]
+			var building: Node3D = region._buildings[i]
 			var size: Vector3 = building.fitted_size
 			var p: Vector2 = Vector2(center.x + inward * (size.x * 0.5 + 0.22), center.z)
 			_prop(region, dressing, load(STREET + "Conditioner/Conditioner.fbx") as PackedScene, load(STREET + "Conditioner/Conditioner.png") as Texture2D, p, Vector3(1.1, 0.7, 0.5), PI * 0.5 * inward, 3.0)
@@ -48,47 +49,32 @@ static func populate(region: Node3D, parent: Node3D) -> void:
 		for x: float in [-11.0, 11.0]:
 			_lamp(region, dressing, Vector2(x, z + 7.0))
 	_lamp(region, dressing, Vector2(19, 25))
+	for i: int in 8:
+		var tool: String = "Hammer" if i % 2 == 0 else "Crowbar"
+		var center: Vector3 = region.BUILDINGS[i]
+		var inward: float = 1.0 if center.x < 0 else -1.0
+		var p: Vector2 = Vector2(center.x - inward * 12, center.z - 7)
+		var clear: bool = true
+		for marker: Node3D in region._spawn_points:
+			if p.distance_squared_to(Vector2(marker.position.x, marker.position.z)) < 16.0:
+				clear = false
+				break
+		if clear:
+			_prop(region, dressing, load(STREET + tool + "/" + tool + ".fbx") as PackedScene, load(STREET + tool + "/" + tool + ".png") as Texture2D, p, Vector3(0.8, 0.8, 0.8), i * 0.7)
 
-static func _prop(region: Node3D, parent: Node3D, scene: PackedScene, texture: Texture2D, p: Vector2, dimensions: Vector3, yaw: float, elevation: float = 0.0) -> void:
+static func _prop(region: Node3D, parent: Node3D, scene: PackedScene, texture: Texture2D, p: Vector2, dimensions: Vector3, yaw: float, elevation: float = 0.0, wooden: bool = false) -> void:
 	if region._on_road(p, 1.5):
 		return
-	var anchor: Node3D = Node3D.new()
-	anchor.name = "YardProp"
+	wooden = wooden or scene == CRATE or scene == BARREL
+	var anchor: Node3D = Catalog.instantiate_model(&"yard_prop", scene, texture, dimensions, 1.5, wooden)
 	anchor.position = Vector3(p.x, region.ground_height(p.x, p.y) + elevation, p.y)
 	anchor.rotation.y = yaw
-	parent.add_child(anchor)
-	var fit: Node3D = Node3D.new()
-	anchor.add_child(fit)
-	var model: Node3D = scene.instantiate() as Node3D
-	# Imported lighting must not override the fixed dawn environment.
-	for node: Node in model.find_children("*", "", true, false):
-		if node is Light3D or node is Camera3D:
-			node.get_parent().remove_child(node)
-			node.queue_free()
-	fit.add_child(model)
-	var bounds: AABB
-	var first: bool = true
-	for mesh: MeshInstance3D in WorldModel.meshes(model):
-		var local_bounds: AABB = (fit.global_transform.affine_inverse() * mesh.global_transform) * mesh.get_aabb()
-		bounds = local_bounds if first else bounds.merge(local_bounds)
-		first = false
-		mesh.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
-	if first or bounds.size.x <= 0 or bounds.size.y <= 0 or bounds.size.z <= 0:
-		push_error("Empty yard prop bounds: %s" % scene.resource_path)
-		return
-	var ratio: Vector3 = dimensions / bounds.size
-	var uniform_scale: float = minf(ratio.x, minf(ratio.y, ratio.z))
-	fit.scale = Vector3.ONE * uniform_scale
-	fit.position = -Vector3(bounds.get_center().x, bounds.position.y, bounds.get_center().z) * uniform_scale
-	WorldModel.bind_texture(model, texture)
-	anchor.set_meta(&"fitted_size", bounds.size * uniform_scale)
-	anchor.set_meta(&"source", scene.resource_path)
+	anchor.ground_position = region.ground_position
+	region._register_target(anchor, 1.5)
 
 static func _lamp(region: Node3D, parent: Node3D, p: Vector2) -> void:
 	var lamp: Node3D = Node3D.new()
 	lamp.name = "LaneLamp"
-	lamp.position = Vector3(p.x, region.ground_height(p.x, p.y), p.y)
-	parent.add_child(lamp)
 	var metal: StandardMaterial3D = StandardMaterial3D.new()
 	metal.albedo_color = Color(0.09, 0.11, 0.10)
 	metal.roughness = 0.8
@@ -112,6 +98,16 @@ static func _lamp(region: Node3D, parent: Node3D, p: Vector2) -> void:
 	light.distance_fade_begin = 250
 	light.distance_fade_length = 40
 	lamp.add_child(light)
+	for child: Node in lamp.get_children():
+		child.owner = lamp
+	var scene: PackedScene = PackedScene.new()
+	scene.pack(lamp)
+	lamp.free()
+	var target: Node3D = Catalog.instantiate_model(&"lamp", scene, null, Vector3(0.65, 4.6, 0.65), 3.0, false)
+	target.preserve_model_lights = true
+	target.position = Vector3(p.x, region.ground_height(p.x, p.y), p.y)
+	target.ground_position = region.ground_position
+	region._register_target(target, 3.0)
 
 static func _part(parent: Node3D, position: Vector3, dimensions: Vector3, material: Material) -> void:
 	var instance: MeshInstance3D = MeshInstance3D.new()

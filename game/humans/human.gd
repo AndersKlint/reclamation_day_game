@@ -238,6 +238,7 @@ func _create_remains() -> void:
 		_remains_parent.add_child(effect)
 		effect.global_transform = Transform3D(Basis.IDENTITY, global_position)
 		effect.style = DEPLETION_SCRIPT.Style.HUMANOID
+		effect.female_voice = _visual.female_voice
 		_visual.reparent(effect, true)
 		effect.configure(_visual, BODY_SIZE, _ground_position)
 		effect.start()

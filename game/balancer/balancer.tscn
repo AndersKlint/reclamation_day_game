@@ -1,10 +1,12 @@
-[gd_scene load_steps=9 format=3]
+[gd_scene load_steps=11 format=3]
 
 [ext_resource type="Script" path="res://game/balancer/balancer.gd" id="1"]
 [ext_resource type="Script" path="res://game/balancer/follow_camera.gd" id="2"]
 [ext_resource type="Script" path="res://game/balancer/drain_controller.gd" id="3"]
 [ext_resource type="Script" path="res://game/balancer/monster_visual.gd" id="4"]
 [ext_resource type="PackedScene" path="res://game/draining/drain_vfx.tscn" id="5"]
+[ext_resource type="Script" path="res://game/balancer/drain_audio.gd" id="6"]
+[ext_resource type="Script" path="res://game/balancer/footsteps.gd" id="7"]
 [sub_resource type="SphereShape3D" id="reach"]
 resource_local_to_scene = true
 radius = 2.8
@@ -30,6 +32,15 @@ movement_body = NodePath("../..")
 [node name="CollectionPoint" type="Marker3D" parent="."]
 position = Vector3(0, 1.25, 0)
 [node name="DrainVfx" parent="." instance=ExtResource("5")]
+[node name="DrainAudio" type="AudioStreamPlayer" parent="."]
+script = ExtResource("6")
+[node name="Footsteps" type="Node" parent="." node_paths=PackedStringArray("movement_body")]
+script = ExtResource("7")
+movement_body = NodePath("..")
+[node name="VoiceA" type="AudioStreamPlayer" parent="Footsteps"]
+volume_db = -26.0
+[node name="VoiceB" type="AudioStreamPlayer" parent="Footsteps"]
+volume_db = -26.0
 [node name="CameraRig" type="Node3D" parent="."]
 script = ExtResource("2")
 [node name="SpringArm3D" type="SpringArm3D" parent="CameraRig"]

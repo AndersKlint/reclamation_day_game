@@ -24,6 +24,17 @@ static func instantiate_scenery(kind: StringName, dimensions: Vector3) -> Node3D
 	_configure(wrapper, kind, dimensions)
 	return wrapper
 
+static func instantiate_model(kind: StringName, scene: PackedScene, texture: Texture2D, dimensions: Vector3, capacity: float, wooden: bool) -> Node3D:
+	var wrapper: Target = Target.new()
+	wrapper.name = String(kind).to_pascal_case()
+	wrapper.kind = kind
+	wrapper.model_scene = scene
+	wrapper.texture = texture
+	wrapper.dimensions = dimensions
+	wrapper.depletion_style = DepletionEffect.Style.WOODEN if wooden else DepletionEffect.Style.RUBBLE
+	wrapper.configure_drain(capacity, 1.0)
+	return wrapper
+
 static func _configure(wrapper: Scenery, kind: StringName, dimensions: Vector3) -> void:
 	wrapper.name = String(kind).to_pascal_case()
 	wrapper.dimensions = dimensions

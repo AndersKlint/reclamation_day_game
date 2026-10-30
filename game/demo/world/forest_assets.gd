@@ -42,27 +42,10 @@ static func populate(region: Node3D, parent: Node3D) -> void:
 		var fit: Transform3D = Transform3D(Basis.IDENTITY.scaled(Vector3.ONE * scale_factor), -Vector3(bounds.get_center().x, bounds.position.y, bounds.get_center().z) * scale_factor) * model.transform
 		for z: int in range(-170, 171, 34):
 			for x: int in range(-120, 121, 30):
-				var transforms: Array[Transform3D] = []
 				for i: int in (6 if object_name == &"PSX_PineConre" else 28):
 					var p: Vector2 = Vector2(x + rng.randf_range(0, 30), z + rng.randf_range(0, 34))
 					if region._clear_route(p):
 						continue
-					var placement: Transform3D = Transform3D(Basis(Vector3.UP, rng.randf_range(-PI, PI)).scaled(Vector3.ONE * rng.randf_range(0.6, 1.3)), Vector3(p.x - x, region.ground_height(p.x, p.y), p.y - z))
-					transforms.append(placement * fit)
-				if transforms.is_empty():
-					continue
-				var multimesh: MultiMesh = MultiMesh.new()
-				multimesh.transform_format = MultiMesh.TRANSFORM_3D
-				multimesh.mesh = model.mesh
-				multimesh.instance_count = transforms.size()
-				for i: int in transforms.size():
-					multimesh.set_instance_transform(i, transforms[i])
-				var chunk: MultiMeshInstance3D = MultiMeshInstance3D.new()
-				chunk.name = String(object_name).trim_prefix("PSX_") + "Patch"
-				chunk.position = Vector3(x, 0, z)
-				chunk.multimesh = multimesh
-				chunk.visibility_range_end = 85
-				chunk.visibility_range_end_margin = 12
-				chunk.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
-				parent.add_child(chunk)
+					var placement: Transform3D = Transform3D(Basis(Vector3.UP, rng.randf_range(-PI, PI)).scaled(Vector3.ONE * rng.randf_range(0.6, 1.3)), Vector3(p.x, region.ground_height(p.x, p.y), p.y))
+					region._add_cover(model.mesh, placement * fit)
 		root.free()

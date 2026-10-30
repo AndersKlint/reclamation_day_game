@@ -3,6 +3,7 @@ extends Node3D
 enum Style { WOODEN, HUMANOID, RUBBLE }
 
 @export var style: Style = Style.RUBBLE
+var female_voice: bool = false
 @export_range(0.1, 5.0, 0.05) var building_collapse_duration: float = 0.8
 @export_range(0.1, 5.0, 0.05) var plant_collapse_duration: float = 1.15
 @export var dust_color: Color = Color(0.56, 0.49, 0.37, 0.48)
@@ -36,6 +37,13 @@ func start() -> void:
 	if _started:
 		return
 	_started = true
+	var ancestor: Node = get_parent()
+	while ancestor != null:
+		var sfx: Node = ancestor.get_node_or_null("GameplaySfx")
+		if sfx != null:
+			sfx.play_depletion(style, global_position, female_voice)
+			break
+		ancestor = ancestor.get_parent()
 	_base_y = global_position.y
 	_visual_transform = global_transform.affine_inverse() * _visual_world_transform
 	if style != Style.HUMANOID:
