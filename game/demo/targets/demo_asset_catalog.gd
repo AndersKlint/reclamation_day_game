@@ -3,10 +3,13 @@ extends RefCounted
 const Scenery = preload("res://game/demo/targets/demo_scenery.gd")
 const Target = preload("res://game/demo/targets/demo_target.gd")
 const ROOT: String = "res://available-assets/retro3d-assets/"
+const Forest = preload("res://game/demo/world/forest_assets.gd")
 
 static func instantiate_target(kind: StringName, dimensions: Vector3, capacity: float, required_size: float) -> Node3D:
 	var wrapper: Target = Target.new()
 	_configure(wrapper, kind, dimensions)
+	if String(kind).contains("tree"):
+		wrapper.blocking = true
 	wrapper.configure_drain(capacity, required_size)
 	return wrapper
 
@@ -20,6 +23,10 @@ static func _configure(wrapper: Scenery, kind: StringName, dimensions: Vector3) 
 	wrapper.dimensions = dimensions
 	wrapper.kind = kind
 	match kind:
+		&"forest_tree1", &"forest_tree2", &"forest_tree3", &"forest_tree4", &"forest_trunk", &"forest_rock":
+			var object_name: StringName = {&"forest_tree1": &"PSX_Tree1", &"forest_tree2": &"PSX_Tree2", &"forest_tree3": &"PSX_Tree3", &"forest_tree4": &"PSX_Tree4", &"forest_trunk": &"PSX_Treetrunk", &"forest_rock": &"PSX_Rock"}[kind]
+			wrapper.model_scene = Forest.scene(object_name)
+			wrapper.blocking = kind in [&"forest_trunk", &"forest_rock"]
 		&"bush", &"bush_alt", &"tree", &"tree_alt":
 			var asset: String = {&"bush": "bush02", &"bush_alt": "bush04", &"tree": "tree01", &"tree_alt": "tree04"}[kind]
 			wrapper.model_scene = load(ROOT + "Nature/tree_pack_1.1/models/" + asset + ".fbx") as PackedScene

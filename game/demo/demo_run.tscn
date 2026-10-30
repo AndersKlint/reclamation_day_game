@@ -1,4 +1,4 @@
-[gd_scene load_steps=9 format=3]
+[gd_scene load_steps=10 format=3]
 
 [ext_resource type="Script" path="res://game/run/run.gd" id="1"]
 [ext_resource type="PackedScene" path="res://game/demo/world/demo_region.tscn" id="2"]
@@ -8,14 +8,20 @@
 [ext_resource type="PackedScene" path="res://game/ui/interface.tscn" id="6"]
 [ext_resource type="PackedScene" path="res://game/rebirth/life_release.tscn" id="7"]
 [ext_resource type="PackedScene" path="res://game/demo/dusk_atmosphere.tscn" id="8"]
+[ext_resource type="Script" path="res://game/humans/civilian_population.gd" id="9"]
 
-[node name="DemoRun" type="Node3D" node_paths=PackedStringArray("region")]
+[node name="DemoRun" type="Node3D" node_paths=PackedStringArray("region", "civilian_population")]
 process_mode = 3
 script = ExtResource("1")
 region = NodePath("DemoRegion")
 place_player_at_region_spawn = true
 regional_encounters = true
 demo_guidance = true
+civilian_population = NodePath("CivilianPopulation")
+
+[node name="CivilianPopulation" type="Node3D" parent="."]
+process_mode = 1
+script = ExtResource("9")
 
 [node name="DemoRegion" parent="." instance=ExtResource("2")]
 process_mode = 1

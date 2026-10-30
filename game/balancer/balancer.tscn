@@ -3,7 +3,7 @@
 [ext_resource type="Script" path="res://game/balancer/balancer.gd" id="1"]
 [ext_resource type="Script" path="res://game/balancer/follow_camera.gd" id="2"]
 [ext_resource type="Script" path="res://game/balancer/drain_controller.gd" id="3"]
-[ext_resource type="PackedScene" path="res://game/balancer/spectral_knight.tscn" id="4"]
+[ext_resource type="Script" path="res://game/balancer/monster_visual.gd" id="4"]
 [ext_resource type="PackedScene" path="res://game/draining/drain_vfx.tscn" id="5"]
 [sub_resource type="SphereShape3D" id="reach"]
 resource_local_to_scene = true
@@ -30,7 +30,8 @@ script = ExtResource("1")
 position = Vector3(0, 1.1, 0)
 shape = SubResource("body")
 [node name="Visuals" type="Node3D" parent="."]
-[node name="SpectralKnight" parent="Visuals" node_paths=PackedStringArray("movement_body") instance=ExtResource("4")]
+[node name="Monster" type="Node3D" parent="Visuals" node_paths=PackedStringArray("movement_body")]
+script = ExtResource("4")
 movement_body = NodePath("../..")
 [node name="CollectionPoint" type="Marker3D" parent="."]
 position = Vector3(0, 1.25, 0)

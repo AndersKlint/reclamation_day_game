@@ -7,6 +7,17 @@ const CRATE = preload("res://available-assets/retro3d-assets/Boxes_Barrels_Crate
 const CRATE_TEXTURE = preload("res://available-assets/retro3d-assets/Boxes_Barrels_Crates/textures/crate.png")
 const BARREL = preload("res://available-assets/retro3d-assets/Boxes_Barrels_Crates/barrel3/Barrel1.glb")
 const BARREL_TEXTURE = preload("res://available-assets/retro3d-assets/Boxes_Barrels_Crates/barrel3/Barrel1_Atlas.png")
+const BENCH = preload("res://available-assets/random-packs/Cordatix_PSXBystanders_FreeSampler_v1.0/GLB/Props/station_bench.glb")
+const BENCH_TEXTURE = preload("res://available-assets/random-packs/Cordatix_PSXBystanders_FreeSampler_v1.0/GLB/Props/station_bench_station_bench.png")
+const STREET: String = "res://available-assets/random-packs/Street Furniture/"
+const CLUTTER: Array[Array] = [
+	["TrashCan", "TrashCan", Vector3(0.7, 1.1, 0.7)],
+	["GarbageBag", "GarbageBag", Vector3(0.7, 0.6, 0.7)],
+	["Сardboard", "cardboard", Vector3(1.0, 0.3, 0.8)],
+	["Box", "Box", Vector3(0.8, 0.7, 0.8)],
+	["Barrel", "barrel", Vector3(0.8, 1.2, 0.8)],
+	["Bottles", "Bottles", Vector3(0.5, 0.4, 0.5)],
+]
 
 static func populate(region: Node3D, parent: Node3D) -> void:
 	var dressing: Node3D = Node3D.new()
@@ -19,21 +30,37 @@ static func populate(region: Node3D, parent: Node3D) -> void:
 		_prop(region, dressing, CRATE, CRATE_TEXTURE, Vector2(center.x - inward * 11.5, center.z + 4), Vector3(1.1, 1.0, 1.1), i * 0.37)
 		if i % 2 == 0:
 			_prop(region, dressing, BARREL, BARREL_TEXTURE, Vector2(center.x - inward * 11.5, center.z + 6), Vector3(0.85, 1.2, 0.85), i * 0.8)
+		for j: int in 3:
+			var entry: Array = CLUTTER[(i + j) % CLUTTER.size()]
+			var asset: String = entry[0]
+			var stem: String = entry[1]
+			var scene: PackedScene = load(STREET + asset + "/" + asset + ".fbx") as PackedScene
+			var texture: Texture2D = load(STREET + asset + "/" + stem + ".png") as Texture2D
+			_prop(region, dressing, scene, texture, Vector2(center.x - inward * (10.5 + j * 0.9), center.z - 4), entry[2], i * 0.43 + j)
+		if i % 4 == 0:
+			_prop(region, dressing, BENCH, BENCH_TEXTURE, Vector2(center.x + inward * 11, center.z - 5), Vector3(2.4, 1.3, 1.0), PI * 0.5 * inward)
+		if i % 3 == 0:
+			var building: Node3D = region._targets[i]
+			var size: Vector3 = building.fitted_size
+			var p: Vector2 = Vector2(center.x + inward * (size.x * 0.5 + 0.22), center.z)
+			_prop(region, dressing, load(STREET + "Conditioner/Conditioner.fbx") as PackedScene, load(STREET + "Conditioner/Conditioner.png") as Texture2D, p, Vector3(1.1, 0.7, 0.5), PI * 0.5 * inward, 3.0)
 	for z: float in [-18.0, -58.0, -100.0, -156.0]:
 		for x: float in [-11.0, 11.0]:
 			_lamp(region, dressing, Vector2(x, z + 7.0))
 	_lamp(region, dressing, Vector2(19, 25))
 
-static func _prop(region: Node3D, parent: Node3D, scene: PackedScene, texture: Texture2D, p: Vector2, dimensions: Vector3, yaw: float) -> void:
+static func _prop(region: Node3D, parent: Node3D, scene: PackedScene, texture: Texture2D, p: Vector2, dimensions: Vector3, yaw: float, elevation: float = 0.0) -> void:
+	if region._on_road(p, 1.5):
+		return
 	var anchor: Node3D = Node3D.new()
 	anchor.name = "YardProp"
-	anchor.position = Vector3(p.x, region.ground_height(p.x, p.y), p.y)
+	anchor.position = Vector3(p.x, region.ground_height(p.x, p.y) + elevation, p.y)
 	anchor.rotation.y = yaw
 	parent.add_child(anchor)
 	var fit: Node3D = Node3D.new()
 	anchor.add_child(fit)
 	var model: Node3D = scene.instantiate() as Node3D
-	# Imported scene lighting must not override the authored dusk lighting.
+	# Imported lighting must not override the fixed dawn environment.
 	for node: Node in model.find_children("*", "", true, false):
 		if node is Light3D or node is Camera3D:
 			node.get_parent().remove_child(node)

@@ -5,18 +5,23 @@ signal navigation_became_ready()
 
 const Catalog = preload("res://game/demo/targets/demo_asset_catalog.gd")
 const Dressing = preload("res://game/demo/world/region_dressing.gd")
+const Forest = preload("res://game/demo/world/forest_assets.gd")
 const GROUND = preload("res://available-assets/retro3d-assets/Buildings/Abandoned House/Textures/groundgrass.png")
 const GRASS = preload("res://available-assets/retro3d-assets/Nature/Materials/grass_bush_1.png")
 const STEP: float = 2.0
 const BUILDINGS: Array[Vector3] = [
 	Vector3(-43, 0, 16), Vector3(42, 0, 4),
 	Vector3(-27, 0, -32), Vector3(28, 0, -35),
-	Vector3(-65, 0, -42), Vector3(66, 0, -47),
-	Vector3(-29, 0, -70), Vector3(30, 0, -74),
-	Vector3(-72, 0, -86), Vector3(73, 0, -91),
-	Vector3(-28, 0, -111), Vector3(30, 0, -114),
+	Vector3(-65, 0, -42), Vector3(66, 0, -44),
+	Vector3(-29, 0, -73), Vector3(30, 0, -74),
+	Vector3(-72, 0, -86), Vector3(73, 0, -86),
+	Vector3(-28, 0, -116), Vector3(30, 0, -114),
 	Vector3(-68, 0, -130), Vector3(69, 0, -133),
-	Vector3(-27, 0, -146), Vector3(29, 0, -148),
+	Vector3(-27, 0, -140), Vector3(29, 0, -140),
+	Vector3(-65, 0, -3), Vector3(68, 0, -5),
+	Vector3(-61, 0, -72), Vector3(66, 0, -72),
+	Vector3(-112, 0, -38), Vector3(113, 0, -38),
+	Vector3(-112, 0, -125), Vector3(113, 0, -125),
 ]
 
 var initial_capacity: float = 0.0
@@ -44,8 +49,9 @@ func _ready() -> void:
 	_build_settlement()
 	_build_resources()
 	_build_margins()
-	_build_grass()
 	_build_spawns()
+	_build_grass()
+	Forest.populate(self, _decoration)
 	Dressing.populate(self, _decoration)
 	_build_perimeter()
 	_begin_navigation.call_deferred()
@@ -207,15 +213,19 @@ func _build_settlement() -> void:
 		var farm: bool = i < 2
 		var kind: StringName = &"shed" if farm else StringName("house%d" % (1 + (i - 2) % 5))
 		var large: bool = i in [7, 12, 15]
-		var dimensions: Vector3 = Vector3(22, 13, 20) if large else Vector3(17, 10, 16)
+		var dimensions: Vector3 = Vector3(22, 13, 20) if large else (Vector3(12, 8, 12) if i >= 16 else Vector3(17, 10, 16))
 		var gate: float = 2.5 if i < 6 else (3.0 if i < 10 else (3.5 if i < 14 else 4.0))
-		_place_target(kind, center, dimensions, 90.0 if farm else 125.0, gate, 0.0 if center.x < 0 else PI)
+		_place_target(kind, center, dimensions, 90.0 if farm else (100.0 if i < 16 else 43.75), gate, 0.0 if center.x < 0 else PI)
 		_box(Vector3(center.x, -0.34, center.z), Vector3(dimensions.x + 0.8, 0.36, dimensions.z + 0.8), stone, true)
 		for offset: float in [-11.0, 11.0]:
-			_box(Vector3(center.x + offset, 0.5, center.z + 9.5), Vector3(0.22, 1.5, 5.0), wood, false)
+			if not _on_road(Vector2(center.x + offset, center.z + 9.5), 3.0):
+				_box(Vector3(center.x + offset, 0.5, center.z + 9.5), Vector3(0.22, 1.5, 5.0), wood, false)
 		for offset: float in [-6.0, 6.0]:
-			_box(Vector3(center.x + offset, 0.5, center.z + 12.0), Vector3(5.0, 1.1, 0.18), wood, false)
-		_scenery(&"rock", Vector2(center.x + 12, center.z - 7), Vector3(1.5, 0.9, 1.5))
+			if not _on_road(Vector2(center.x + offset, center.z + 12.0), 3.0):
+				_box(Vector3(center.x + offset, 0.5, center.z + 12.0), Vector3(5.0, 1.1, 0.18), wood, false)
+		var rock: Vector2 = Vector2(center.x + 12, center.z - 7)
+		if not _on_road(rock, 1.5):
+			_scenery(&"rock", rock, Vector3(1.5, 0.9, 1.5))
 
 func _box(location: Vector3, dimensions: Vector3, material: Material, blocking: bool) -> void:
 	var instance: MeshInstance3D = MeshInstance3D.new()
@@ -251,39 +261,65 @@ func _build_resources() -> void:
 			_place_target(&"bush" if i % 2 == 0 else &"bush_alt", Vector3(p.x, 0, p.y), Vector3(3.2, 2.1, 3.2), 10, 1.0, angle)
 	for i: int in 12:
 		var p: Vector3 = Vector3(-80 if i % 2 == 0 else 80, 0, 45 + (i / 2) * 20)
-		_place_target(&"tree_alt", p, Vector3(8, 11, 8), 20, 1.8)
+		_place_target(StringName("forest_tree%d" % (1 + i % 4)), p, Vector3(8, 11, 8), 15, 1.8)
 	for row: int in 4:
 		for column: int in 4:
-			_place_target(&"tree", Vector3(-72 + column * 14, 0, 27 - row * 13), Vector3(7, 9, 7), 25, 1.8)
+			var p: Vector2 = Vector2(-72 + column * 14, 27 - row * 13)
+			if _clear_route(p):
+				p = Vector2(-121 - column * 3, 40 + row * 13)
+			_place_target(StringName("forest_tree%d" % (1 + (row + column) % 4)), Vector3(p.x, 0, p.y), Vector3(7, 9, 7), 25, 1.8)
 	for i: int in 10:
 		_place_target(&"bush", Vector3(53 + (i % 5) * 9, 0, 15 + (i / 5) * 12), Vector3(3, 2, 3), 12, 1)
 	for i: int in 12:
 		var x: float = -108.0 if i % 2 == 0 else 108.0
 		var z: float = -28.0 - (i / 2) * 23.0
-		_place_target(&"tree_alt", Vector3(x, 0, z), Vector3(8, 12, 8), 20, 1.8)
-		_place_target(&"bush_alt", Vector3(x * 0.77, 0, z + 6), Vector3(3, 2, 3), 10, 1)
+		var p: Vector2 = Vector2(x, z)
+		if _clear_route(p):
+			p.x = signf(x) * 130
+		_place_target(StringName("forest_tree%d" % (1 + i % 4)), Vector3(p.x, 0, p.y), Vector3(8, 12, 8), 15, 1.8)
+		var bush: Vector2 = Vector2(x * 0.77, z + 6)
+		if _clear_route(bush):
+			bush.x = signf(x) * 124
+		_place_target(&"bush_alt", Vector3(bush.x, 0, bush.y), Vector3(3, 2, 3), 10, 1)
+	var field_edge: Array[Vector2] = [Vector2(98, 54), Vector2(99, 76), Vector2(98, 98), Vector2(98, 120), Vector2(99, 138), Vector2(98, 164)]
+	for side: int in [-1, 1]:
+		for i: int in field_edge.size():
+			var p: Vector2 = field_edge[i] * Vector2(side, 1)
+			_place_target(StringName("forest_tree%d" % (1 + (i + (2 if side > 0 else 0)) % 4)), Vector3(p.x, 0, p.y), Vector3(8, 11, 8), 10, 1.8)
 
 func _build_margins() -> void:
+	for i: int in 18:
+		var p: Vector2 = Vector2((-1.0 if i % 2 == 0 else 1.0) * (105 + i % 3 * 8), 42 + (i / 2) * 14)
+		if not _clear_route(p):
+			_scenery(&"forest_trunk" if i % 3 == 0 else &"forest_rock", p, Vector3(2.8, 1.4, 2.8))
 	for side: int in [-1, 1]:
 		for i: int in 48:
 			var z: float = -205 + i * 8.5 + _rng.randf_range(-5, 5)
 			var x: float = side * _rng.randf_range(133, 180)
-			_scenery(&"pine" if i % 3 == 0 else &"tree_alt", Vector2(x, z), Vector3(12, _rng.randf_range(14, 23), 12))
+			_scenery(&"pine" if i % 3 == 0 else StringName("forest_tree%d" % (1 + i % 4)), Vector2(x, z), Vector3(12, _rng.randf_range(14, 23), 12))
 		for i: int in 34:
 			_scenery(&"pine", Vector2(-175 + i * 10.5, side * _rng.randf_range(185, 228)), Vector3(13, _rng.randf_range(16, 25), 13))
 	for i: int in 55:
 		var side: float = -1.0 if i % 2 == 0 else 1.0
 		_scenery(&"rock", Vector2(side * _rng.randf_range(112, 144), _rng.randf_range(-166, 167)), Vector3(3, 2, 3))
 
-func _clear_route(p: Vector2) -> bool:
-	if absf(p.x - _lane_x(p.y)) < 10.0:
+func _on_road(p: Vector2, clearance: float = 3.0) -> bool:
+	if absf(p.x - _lane_x(p.y)) < 7.0 + clearance:
 		return true
 	if p.y < 35:
-		if absf(absf(p.x) - 94.5) < 7:
+		if absf(p.x + 94.0) < 4.0 + clearance or absf(p.x - 95.0) < 4.0 + clearance:
 			return true
 		for z: float in [-18.0, -58.0, -100.0, -156.0]:
-			if absf(p.y - z) < 8:
+			if absf(p.y - z) < 5.0 + clearance:
 				return true
+	return false
+
+func _clear_route(p: Vector2) -> bool:
+	if _on_road(p):
+		return true
+	for marker: Node3D in _spawn_points:
+		if p.distance_squared_to(Vector2(marker.position.x, marker.position.z)) < 16.0:
+			return true
 	for center: Vector3 in BUILDINGS:
 		if absf(p.x - center.x) < 14 and absf(p.y - center.z) < 14:
 			return true

@@ -11,6 +11,7 @@ enum State { RUNNING, PAUSED, CHOOSING, FAILED, REBIRTH, FINISHED }
 @export var place_player_at_region_spawn: bool = false
 @export var regional_encounters: bool = false
 @export var demo_guidance: bool = false
+@export var civilian_population: Node3D
 var state: State = State.RUNNING
 var _guidance_elapsed: float = 0.0
 var _resolution_pending: bool = false
@@ -47,6 +48,9 @@ func _ready() -> void:
 	_on_growth_changed(balancer.life, balancer.size)
 	_on_progress_changed(region.drained_capacity, region.initial_capacity)
 	human_director.start()
+	if civilian_population != null:
+		civilian_population.configure(region, balancer)
+		civilian_population.start()
 	if demo_guidance:
 		_update_location()
 	_enable_initial_gameplay.call_deferred()
@@ -160,6 +164,8 @@ func _fail_run() -> void:
 	state = State.FAILED
 	balancer.set_gameplay_enabled(false)
 	human_director.stop()
+	if civilian_population != null:
+		civilian_population.stop()
 	get_tree().paused = true
 	interface.hide_overlays()
 	interface.show_results(false, balancer.life, balancer.size, region.drained_capacity, region.initial_capacity)
@@ -169,6 +175,8 @@ func _begin_rebirth() -> void:
 	interface.hide_overlays()
 	balancer.set_gameplay_enabled(false)
 	human_director.stop()
+	if civilian_population != null:
+		civilian_population.stop()
 	get_tree().paused = false
 	balancer.get_node("ReachVisual").hide()
 	region.renew(rebirth_duration)
@@ -187,6 +195,8 @@ func _on_retry_requested() -> void:
 	_retry_pending = true
 	balancer.set_gameplay_enabled(false)
 	human_director.stop()
+	if civilian_population != null:
+		civilian_population.stop()
 	_reload_run.call_deferred()
 
 func _reload_run() -> void:

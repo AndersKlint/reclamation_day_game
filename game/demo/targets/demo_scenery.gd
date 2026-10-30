@@ -49,7 +49,9 @@ func _ready() -> void:
 		var collision: CollisionShape3D = CollisionShape3D.new()
 		var box: BoxShape3D = BoxShape3D.new()
 		box.size = fitted_size
+		if String(kind).contains("tree"):
+			box.size = Vector3(maxf(0.4, fitted_size.x * 0.12), fitted_size.y * 0.65, maxf(0.4, fitted_size.z * 0.12))
 		collision.shape = box
-		collision.position.y = fitted_size.y * 0.5
+		collision.position.y = box.size.y * 0.5
 		body.add_child(collision)
 		add_child(body)
