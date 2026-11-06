@@ -7,10 +7,15 @@ const Catalog = preload("res://game/demo/targets/demo_asset_catalog.gd")
 const Dressing = preload("res://game/demo/world/region_dressing.gd")
 const Forest = preload("res://game/demo/world/forest_assets.gd")
 const CoverPatch = preload("res://game/demo/world/cover_patch.gd")
+const CityBuilder = preload("res://game/demo/city/city_builder.gd")
+const CityLayout = preload("res://game/demo/city/city_layout.gd")
 const COVER_FADE_SHADER: Shader = preload("res://game/demo/world/ground_cover_fade.gdshader")
 const GROUND = preload("res://available-assets/retro3d-assets/Buildings/Abandoned House/Textures/groundgrass.png")
 const GRASS = preload("res://available-assets/retro3d-assets/Nature/Materials/grass_bush_1.png")
-const STEP: float = 2.0
+const STEP: float = 4.0
+const WORLD_BOUNDS: Rect2 = Rect2(Vector2(-280.0, -780.0), Vector2(560.0, 1030.0))
+const CITY_EDGE: float = -190.0
+const DOWNTOWN_EDGE: float = -460.0
 const BUILDINGS: Array[Vector3] = [
 	Vector3(-43, 0, 16), Vector3(42, 0, 4),
 	Vector3(-27, 0, -32), Vector3(28, 0, -35),
@@ -43,6 +48,12 @@ var _spawn_root: Node3D
 var _grass_material: StandardMaterial3D
 var _grass_fade_material: ShaderMaterial
 var _renew_tween: Tween
+var _city_layout: Dictionary = {}
+var _city_pedestrian_points: Array[Vector3] = []
+var _pedestrian_points: Array[Vector3] = []
+var _traffic_routes: Array[PackedVector3Array] = []
+var _tank_routes: Array[PackedVector3Array] = []
+var _city_parking: Array[Transform3D] = []
 
 func _ready() -> void:
 	_rng.seed = 30102026
@@ -52,6 +63,7 @@ func _ready() -> void:
 	_spawn_root = _container("SpawnPoints")
 	_build_terrain()
 	_build_roads()
+	_build_city()
 	_build_settlement()
 	_build_resources()
 	_build_margins()
@@ -72,11 +84,36 @@ func _container(label: String) -> Node3D:
 func get_spawn_points() -> Array[Node3D]:
 	return _spawn_points.duplicate()
 
+func get_world_bounds() -> Rect2:
+	return WORLD_BOUNDS
+
+func get_pedestrian_points() -> Array[Vector3]:
+	return _pedestrian_points.duplicate()
+
+func get_traffic_routes() -> Array[PackedVector3Array]:
+	var routes: Array[PackedVector3Array] = []
+	for route: PackedVector3Array in _traffic_routes:
+		routes.append(route.duplicate())
+	return routes
+
+func get_tank_routes() -> Array[PackedVector3Array]:
+	var routes: Array[PackedVector3Array] = []
+	for route: PackedVector3Array in _tank_routes:
+		routes.append(route.duplicate())
+	return routes
+
+func get_city_parking() -> Array[Transform3D]:
+	return _city_parking.duplicate()
+
 func get_player_spawn() -> Vector3:
 	return to_global(Vector3(0.0, ground_height(0.0, 130.0), 130.0))
 
 func get_zone_at(world_position: Vector3) -> StringName:
 	var z: float = to_local(world_position).z
+	if z < DOWNTOWN_EDGE:
+		return &"downtown"
+	if z < CITY_EDGE:
+		return &"city"
 	if z < -20.0:
 		return &"village"
 	if z < 35.0:
@@ -101,7 +138,9 @@ func _height_sample(x: float, z: float) -> float:
 	for center: Vector3 in BUILDINGS:
 		var distance: float = maxf(absf(x - center.x) - 13.0, absf(z - center.z) - 12.0)
 		height = lerpf(0.5, height, smoothstep(0.0, 9.0, distance))
-	var margin: float = maxf(absf(x) - 120.0, absf(z) - 170.0)
+	var city_blend: float = 1.0 - smoothstep(-210.0, -150.0, z)
+	height = lerpf(height, 0.5, city_blend)
+	var margin: float = maxf(absf(x) - 245.0, maxf(z - 220.0, -800.0 - z))
 	return height + smoothstep(0.0, 65.0, margin) * (14.0 + 5.0 * sin(x * 0.031 + z * 0.019))
 
 func ground_height(x: float, z: float) -> float:
@@ -134,8 +173,8 @@ func _material(color: Color, texture: Texture2D = null) -> StandardMaterial3D:
 func _build_terrain() -> void:
 	var surface: SurfaceTool = SurfaceTool.new()
 	surface.begin(Mesh.PRIMITIVE_TRIANGLES)
-	for z: int in range(-250, 250, 2):
-		for x: int in range(-200, 200, 2):
+	for z: int in range(int(WORLD_BOUNDS.position.y), int(WORLD_BOUNDS.end.y), int(STEP)):
+		for x: int in range(int(WORLD_BOUNDS.position.x), int(WORLD_BOUNDS.end.x), int(STEP)):
 			var a: Vector3 = Vector3(x, _height_sample(x, z), z)
 			var b: Vector3 = Vector3(x + STEP, _height_sample(x + STEP, z), z)
 			var c: Vector3 = Vector3(x, _height_sample(x, z + STEP), z + STEP)
@@ -165,7 +204,7 @@ func _lane_x(z: float) -> float:
 func _build_roads() -> void:
 	var dirt: StandardMaterial3D = _material(Color(0.29, 0.25, 0.19), GROUND)
 	var points: Array[Vector2] = []
-	for z: int in range(-166, 171, 2):
+	for z: int in range(-190, 171, 2):
 		points.append(Vector2(_lane_x(z), z))
 	_ribbon(points, 7.0, dirt, "MainLane")
 	for z: float in [-18.0, -58.0, -100.0, -156.0]:
@@ -178,6 +217,30 @@ func _build_roads() -> void:
 		for z: int in range(-156, 31, 2):
 			points.append(Vector2(x, z))
 		_ribbon(points, 4.0, dirt, "BackLane")
+
+func _build_city() -> void:
+	_city_layout = CityBuilder.build(self)
+	for p: Vector2 in _city_layout["pedestrian_points"]:
+		_city_pedestrian_points.append(to_global(Vector3(p.x, ground_height(p.x, p.y), p.y)))
+	for route: PackedVector3Array in _city_layout["traffic_routes"]:
+		_traffic_routes.append(_route_world(route))
+	for route: PackedVector3Array in _city_layout["tank_routes"]:
+		_tank_routes.append(_route_world(route))
+	for entry: Dictionary in _city_layout["parking"]:
+		var parking_position: Vector2 = entry["position"]
+		_city_parking.append(_parking_world(parking_position, float(entry["yaw"])))
+	for z: float in [72.0, 98.0, 124.0, 150.0]:
+		_city_parking.append(_parking_world(Vector2(_lane_x(z) + 4.2, z), 0.0))
+
+func _route_world(route: PackedVector3Array) -> PackedVector3Array:
+	var points: PackedVector3Array = PackedVector3Array()
+	for point: Vector3 in route:
+		points.append(ground_position(to_global(Vector3(point.x, 0.0, point.z))))
+	return points
+
+func _parking_world(p: Vector2, yaw: float) -> Transform3D:
+	var origin: Vector3 = to_global(Vector3(p.x, ground_height(p.x, p.y) + 0.065, p.y))
+	return Transform3D(global_basis * Basis(Vector3.UP, yaw), origin)
 
 func _ribbon(points: Array[Vector2], half_width: float, material: Material, label: String) -> void:
 	var surface: SurfaceTool = SurfaceTool.new()
@@ -329,11 +392,15 @@ func _build_margins() -> void:
 			_scenery(&"forest_trunk" if i % 3 == 0 else &"forest_rock", p, Vector3(2.8, 1.4, 2.8))
 	for side: int in [-1, 1]:
 		for i: int in 48:
-			var z: float = -205 + i * 8.5 + _rng.randf_range(-5, 5)
+			var z: float = -178.0 + i * 7.8 + _rng.randf_range(-2.0, 2.0)
 			var x: float = side * _rng.randf_range(133, 180)
 			_scenery(&"pine" if i % 3 == 0 else StringName("forest_tree%d" % (1 + i % 4)), Vector2(x, z), Vector3(12, _rng.randf_range(14, 23), 12))
-		for i: int in 34:
-			_scenery(&"pine", Vector2(-175 + i * 10.5, side * _rng.randf_range(185, 228)), Vector3(13, _rng.randf_range(16, 25), 13))
+	for i: int in 30:
+		_scenery(&"pine", Vector2(-175 + i * 11.5, 185 + _rng.randf_range(0, 30)), Vector3(13, _rng.randf_range(16, 25), 13))
+	for i: int in 60:
+		var p: Vector2 = Vector2(-178 + i * 6.0, -769.0 + _rng.randf_range(-2.0, 2.0))
+		if not _on_road(p, 4.0):
+			_scenery(&"pine", p, Vector3(13, _rng.randf_range(16, 25), 13))
 	for i: int in 55:
 		var side: float = -1.0 if i % 2 == 0 else 1.0
 		_scenery(&"rock", Vector2(side * _rng.randf_range(112, 144), _rng.randf_range(-166, 167)), Vector3(3, 2, 3))
@@ -346,6 +413,13 @@ func _on_road(p: Vector2, clearance: float = 3.0) -> bool:
 			return true
 		for z: float in [-18.0, -58.0, -100.0, -156.0]:
 			if absf(p.y - z) < 5.0 + clearance:
+				return true
+	if p.y < CITY_EDGE + 12.0:
+		for x: float in CityLayout.X_STREETS:
+			if absf(p.x - x) < CityLayout.ROAD_HALF + clearance:
+				return true
+		for z: float in CityLayout.Z_STREETS:
+			if absf(p.y - z) < CityLayout.ROAD_HALF + clearance:
 				return true
 	return false
 
@@ -459,6 +533,14 @@ func _build_spawns() -> void:
 	for z: float in [-58.0, -100.0, -156.0]:
 		for x: float in [-52.0, -8.0, 8.0, 52.0]:
 			_add_spawn(Vector2(x, z))
+	for p: Vector2 in _city_layout["spawn_points"]:
+		_add_spawn(p)
+	_finish_pedestrian_points()
+
+func _finish_pedestrian_points() -> void:
+	_pedestrian_points = _city_pedestrian_points.duplicate()
+	for marker: Node3D in _spawn_points:
+		_pedestrian_points.append(marker.global_position)
 
 func _add_spawn(p: Vector2) -> void:
 	var marker: Marker3D = Marker3D.new()
@@ -473,14 +555,22 @@ func _build_perimeter() -> void:
 	body.name = "WoodlandPerimeter"
 	body.collision_layer = 1
 	body.collision_mask = 6
+	var center: Vector2 = WORLD_BOUNDS.get_center()
+	var half_x: float = WORLD_BOUNDS.size.x * 0.5 - 4.0
+	var half_z: float = WORLD_BOUNDS.size.y * 0.5 - 4.0
 	for side: float in [-1.0, 1.0]:
-		for axis: int in 2:
-			var collision: CollisionShape3D = CollisionShape3D.new()
-			var shape: BoxShape3D = BoxShape3D.new()
-			shape.size = Vector3(2, 90, 472) if axis == 0 else Vector3(372, 90, 2)
-			collision.shape = shape
-			collision.position = Vector3(side * 185, 30, 0) if axis == 0 else Vector3(0, 30, side * 235)
-			body.add_child(collision)
+		var collision_x: CollisionShape3D = CollisionShape3D.new()
+		var shape_x: BoxShape3D = BoxShape3D.new()
+		shape_x.size = Vector3(2, 90, WORLD_BOUNDS.size.y - 8.0)
+		collision_x.shape = shape_x
+		collision_x.position = Vector3(center.x + side * half_x, 30, center.y)
+		body.add_child(collision_x)
+		var collision_z: CollisionShape3D = CollisionShape3D.new()
+		var shape_z: BoxShape3D = BoxShape3D.new()
+		shape_z.size = Vector3(WORLD_BOUNDS.size.x - 8.0, 90, 2)
+		collision_z.shape = shape_z
+		collision_z.position = Vector3(center.x, 30, center.y + side * half_z)
+		body.add_child(collision_z)
 	_landscape.add_child(body)
 
 func _begin_navigation() -> void:
@@ -489,13 +579,16 @@ func _begin_navigation() -> void:
 	var mesh: NavigationMesh = NavigationMesh.new()
 	mesh.geometry_parsed_geometry_type = NavigationMesh.PARSED_GEOMETRY_STATIC_COLLIDERS
 	mesh.geometry_collision_mask = 1
-	mesh.cell_size = 0.5
+	mesh.cell_size = 0.6
 	mesh.cell_height = 0.25
-	mesh.agent_radius = 0.5
+	mesh.agent_radius = 0.6
 	mesh.agent_height = 2.0
 	mesh.agent_max_climb = 0.5
 	mesh.agent_max_slope = 35
-	mesh.filter_baking_aabb = AABB(Vector3(-120, -8, -170), Vector3(240, 50, 340))
+	mesh.filter_baking_aabb = AABB(
+		Vector3(WORLD_BOUNDS.position.x + 2.0, -8.0, WORLD_BOUNDS.position.y + 2.0),
+		Vector3(WORLD_BOUNDS.size.x - 4.0, 50.0, WORLD_BOUNDS.size.y - 4.0)
+	)
 	_navigation.navigation_mesh = mesh
 	add_child(_navigation)
 	var source: NavigationMeshSourceGeometryData3D = NavigationMeshSourceGeometryData3D.new()

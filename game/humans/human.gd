@@ -92,14 +92,18 @@ func _physics_process(delta: float) -> void:
 		cancel_attack()
 		return
 	_cooldown_left = maxf(0.0, _cooldown_left - delta)
-	var offset: Vector3 = _balancer.global_position - global_position
+	var target: Vector3 = _combat_target(global_position + Vector3.UP * 1.3)
+	var offset: Vector3 = target - global_position
 	offset.y = 0.0
-	if _region != null and (_balancer.global_position.distance_to(home_position) > home_leash or global_position.distance_to(home_position) > home_leash):
+	if _region != null and (_combat_distance_to_home() > home_leash or global_position.distance_to(home_position) > home_leash):
 		if not _returning:
 			_target_left = 0.0
 		_returning = true
 		cancel_attack()
 	if _windup_left > 0.0:
+		if not _target_available():
+			cancel_attack()
+			return
 		_windup_left = maxf(0.0, _windup_left - delta)
 		_warning_material.albedo_color = Color("ff5948") if _windup_left < windup * 0.4 else Color("ffc24b")
 		_move(Vector3.ZERO, delta)
@@ -117,9 +121,9 @@ func _physics_process(delta: float) -> void:
 				return
 			_move(_navigate(home_position, delta) * movement_speed, delta)
 			return
-	if distance <= _effective_attack_range() and _cooldown_left <= 0.0 and _has_line_of_sight():
-		_aim = _balancer.global_position
-		_aim.y = _ground_height(_aim) + 0.06
+	if distance <= _effective_attack_range() and _cooldown_left <= 0.0 and _target_available() and _has_line_of_sight(target):
+		var aim_point: Vector3 = _combat_target(global_position)
+		_aim = Vector3(aim_point.x, _ground_height(aim_point) + 0.06, aim_point.z)
 		_attack_impact_radius = impact_radius + _melee_growth_reach()
 		var disc: CylinderMesh = _warning.mesh as CylinderMesh
 		disc.top_radius = _attack_impact_radius
@@ -130,7 +134,7 @@ func _physics_process(delta: float) -> void:
 		_move(Vector3.ZERO, delta)
 		return
 	var direction: Vector3 = offset.normalized()
-	if ranged and _has_line_of_sight():
+	if ranged and _has_line_of_sight(target):
 		if distance < attack_range * 0.45:
 			direction = -direction
 		elif distance < attack_range * 0.8:
@@ -197,14 +201,28 @@ func _steer(direction: Vector3, delta: float) -> Vector3:
 			return candidate
 	return Vector3.ZERO
 
-func _has_line_of_sight() -> bool:
+func _has_line_of_sight(target: Vector3) -> bool:
 	var origin: Vector3 = global_position + Vector3.UP * 1.3
-	var destination: Vector3 = _balancer.global_position + Vector3.UP * (1.25 * float(_balancer.get("size")))
+	var destination: Vector3 = target + Vector3.UP * 0.25
 	var query: PhysicsRayQueryParameters3D = PhysicsRayQueryParameters3D.create(origin, destination, 1)
 	return get_world_3d().direct_space_state.intersect_ray(query).is_empty()
 
+func _combat_target(from_position: Vector3) -> Vector3:
+	if is_instance_valid(_balancer) and _balancer.has_method(&"get_combat_target"):
+		return _balancer.call(&"get_combat_target", from_position) as Vector3
+	return _balancer.global_position if is_instance_valid(_balancer) else from_position
+
+func _target_available() -> bool:
+	return is_instance_valid(_balancer) and _balancer.is_inside_tree() and _balancer.is_visible_in_tree()
+
 func _melee_growth_reach() -> float:
-	return 0.0 if ranged else 0.45 * maxf(0.0, float(_balancer.get("size")) - 1.0)
+	return 0.0
+
+func _combat_distance_to_home() -> float:
+	var target: Vector3 = _combat_target(home_position)
+	var offset: Vector3 = home_position - target
+	offset.y = 0.0
+	return offset.length()
 
 func _effective_attack_range() -> float:
 	return attack_range + _melee_growth_reach()
@@ -212,15 +230,17 @@ func _effective_attack_range() -> float:
 func _resolve_attack() -> void:
 	_warning.visible = false
 	_cooldown_left = cooldown
-	if not _active or not is_instance_valid(_balancer):
+	if not _active or not _target_available():
 		return
 	if not bool(_balancer.get("gameplay_enabled")) or float(_balancer.get("health")) <= 0.0:
 		return
-	var offset: Vector3 = _balancer.global_position - _aim
+	var footprint: Vector3 = _combat_target(_aim)
+	var offset: Vector3 = footprint - _aim
 	offset.y = 0.0
-	var reach: Vector3 = _balancer.global_position - global_position
+	var reach_target: Vector3 = _combat_target(global_position + Vector3.UP * 1.3)
+	var reach: Vector3 = reach_target - global_position
 	reach.y = 0.0
-	if offset.length() <= _attack_impact_radius and reach.length() <= _effective_attack_range() and _has_line_of_sight():
+	if offset.length() <= _attack_impact_radius and reach.length() <= _effective_attack_range() and _has_line_of_sight(reach_target):
 		_balancer.call("take_damage", damage)
 
 func _on_depleted() -> void:

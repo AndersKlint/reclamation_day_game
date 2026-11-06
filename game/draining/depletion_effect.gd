@@ -2,7 +2,15 @@ extends Node3D
 
 enum Style { WOODEN, HUMANOID, RUBBLE }
 
+const ANIMATED_COLLAPSE_BUDGET: int = 12
+const STATIC_BUILDING_PIECES: int = 48
+const STATIC_PROP_PIECES: int = 12
+const GROUND_SAMPLE_BUDGET: int = 32
+
+static var _animated_collapses: int = 0
+
 @export var style: Style = Style.RUBBLE
+@export var building_collapse: bool = false
 var female_voice: bool = false
 @export_range(0.1, 5.0, 0.05) var building_collapse_duration: float = 0.8
 @export_range(0.1, 5.0, 0.05) var plant_collapse_duration: float = 1.15
@@ -20,6 +28,13 @@ var _size: Vector3 = Vector3.ONE
 var _ground_position: Callable
 var _base_y: float
 var _started: bool = false
+var _owns_animated_collapse: bool = false
+var _ground_samples_remaining: int = GROUND_SAMPLE_BUDGET
+var _fallback_ground_height: float
+
+
+func _exit_tree() -> void:
+	_release_animated_collapse()
 
 
 func configure(source_visual: Node3D, fitted_size: Vector3, ground_position: Callable) -> void:
@@ -41,16 +56,26 @@ func start() -> void:
 	while ancestor != null:
 		var sfx: Node = ancestor.get_node_or_null("GameplaySfx")
 		if sfx != null:
-			sfx.play_depletion(style, global_position, female_voice)
+			sfx.play_depletion(style, global_position, female_voice, building_collapse, _size)
 			break
 		ancestor = ancestor.get_parent()
 	_base_y = global_position.y
-	_visual_transform = global_transform.affine_inverse() * _visual_world_transform
-	if style != Style.HUMANOID:
+	_fallback_ground_height = _ground_height(Vector3.ZERO)
+	var has_visual: bool = is_instance_valid(_visual)
+	if has_visual:
+		_visual_world_transform = _visual.global_transform
+		_visual_transform = global_transform.affine_inverse() * _visual_world_transform
+	_owns_animated_collapse = has_visual and _animated_collapses < ANIMATED_COLLAPSE_BUDGET
+	if _owns_animated_collapse:
+		_animated_collapses += 1
+	if _owns_animated_collapse and style != Style.HUMANOID:
 		_spawn_dust()
-	_spawn_fragments()
+	_spawn_fragments(_owns_animated_collapse)
 	if style == Style.HUMANOID:
 		_spawn_blood_puddle()
+	if not _owns_animated_collapse:
+		_hide_visual()
+		return
 	var tween: Tween = create_tween()
 	if style == Style.RUBBLE:
 		tween.tween_method(_shudder, 0.0, 1.0, 0.45)
@@ -58,6 +83,13 @@ func start() -> void:
 	else:
 		tween.tween_method(_collapse, 0.0, 1.0, plant_collapse_duration if style == Style.WOODEN else 0.45).set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_IN)
 	tween.tween_callback(_hide_visual)
+	tween.tween_callback(_release_animated_collapse)
+
+
+func _release_animated_collapse() -> void:
+	if _owns_animated_collapse:
+		_owns_animated_collapse = false
+		_animated_collapses = maxi(_animated_collapses - 1, 0)
 
 
 func _collect_materials(node: Node) -> void:
@@ -135,13 +167,14 @@ func _hide_visual() -> void:
 			_visual.visible = false
 
 
-func _spawn_fragments() -> void:
+func _spawn_fragments(animated: bool) -> void:
 	var rng: RandomNumberGenerator = RandomNumberGenerator.new()
 	rng.randomize()
 	var volume: float = _size.x * _size.y * _size.z
 	var retained: float = volume * (0.0015 if style == Style.WOODEN else (0.16 if style == Style.HUMANOID else 0.12))
 	var target_piece_volume: float = 0.004 if style == Style.WOODEN else (0.012 if style == Style.HUMANOID else 3.0)
-	var count: int = clampi(ceili(retained / target_piece_volume), 6, 160)
+	var piece_limit: int = STATIC_BUILDING_PIECES if building_collapse and style == Style.RUBBLE else STATIC_PROP_PIECES
+	var count: int = clampi(ceili(retained / target_piece_volume), 6, piece_limit)
 	var unit: float = pow(retained / float(count), 1.0 / 3.0)
 	var materials: Array[Material] = []
 	if style == Style.RUBBLE:
@@ -187,11 +220,17 @@ func _spawn_fragments() -> void:
 			rotation.x += PI * 0.5
 		var basis: Basis = Basis.from_euler(rotation).scaled_local(dimensions)
 		destination.y = _fragment_ground_height(destination, basis)
+		var fragment_transform: Transform3D = Transform3D(basis, destination + Vector3.UP * rng.randf_range(0.2, maxf(0.25, _size.y * 0.65)))
+		if not animated:
+			batches[material_index].set_instance_transform(indices[material_index], Transform3D(basis, destination))
+			batches[material_index].visible_instance_count = indices[material_index] + 1
+			indices[material_index] += 1
+			continue
 		var fragment: MeshInstance3D = MeshInstance3D.new()
 		fragment.mesh = _box_mesh
 		fragment.material_override = materials[material_index]
 		add_child(fragment)
-		fragment.transform = Transform3D(basis, destination + Vector3.UP * rng.randf_range(0.2, maxf(0.25, _size.y * 0.65)))
+		fragment.transform = fragment_transform
 		var tween: Tween = create_tween()
 		tween.tween_property(fragment, "position", destination, rng.randf_range(0.55, 1.15)).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_IN)
 		tween.tween_callback(_settle_fragment.bind(fragment, batches[material_index], indices[material_index]))
@@ -258,10 +297,15 @@ func _spawn_blood_puddle() -> void:
 
 
 func _fragment_ground_height(center: Vector3, basis: Basis) -> float:
+	if _ground_samples_remaining <= 0:
+		return _fallback_ground_height
 	var height: float = -INF
 	for x: float in [-0.5, 0.5]:
 		for y: float in [-0.5, 0.5]:
 			for z: float in [-0.5, 0.5]:
+				if _ground_samples_remaining <= 0:
+					return maxf(height, _fallback_ground_height)
+				_ground_samples_remaining -= 1
 				var offset: Vector3 = basis * Vector3(x, y, z)
 				height = maxf(height, _ground_height(center + offset) - offset.y)
 	return height

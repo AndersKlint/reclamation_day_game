@@ -2,6 +2,8 @@ shader_type spatial;
 
 uniform sampler2D grass_texture : source_color, filter_linear_mipmap, repeat_enable;
 uniform sampler2D scorch_mask : filter_linear, repeat_disable;
+uniform vec2 mask_min = vec2(-200.0, -250.0);
+uniform vec2 mask_size = vec2(400.0, 500.0);
 uniform vec4 grass_color : source_color = vec4(0.57, 0.63, 0.48, 1.0);
 uniform float grass_roughness = 0.95;
 uniform float scorch_strength : hint_range(0.0, 1.0) = 1.0;
@@ -13,7 +15,7 @@ void vertex() {
 
 void fragment() {
 	vec3 grass = texture(grass_texture, UV).rgb * grass_color.rgb;
-	vec2 mask_uv = (ground_position + vec2(200.0, 250.0)) / vec2(400.0, 500.0);
+	vec2 mask_uv = (ground_position - mask_min) / mask_size;
 	vec2 texel = 0.5 / vec2(textureSize(scorch_mask, 0));
 	float mask = texture(scorch_mask, mask_uv).r * 0.4;
 	mask += texture(scorch_mask, mask_uv + vec2(texel.x, 0.0)).r * 0.15;

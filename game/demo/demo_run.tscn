@@ -1,4 +1,4 @@
-[gd_scene load_steps=12 format=3]
+[gd_scene load_steps=14 format=3]
 
 [ext_resource type="Script" path="res://game/run/run.gd" id="1"]
 [ext_resource type="PackedScene" path="res://game/demo/world/demo_region.tscn" id="2"]
@@ -11,8 +11,10 @@
 [ext_resource type="Script" path="res://game/humans/civilian_population.gd" id="9"]
 [ext_resource type="PackedScene" path="res://game/music/background_music.tscn" id="10_music"]
 [ext_resource type="Script" path="res://game/demo/world/ground_scorch.gd" id="11_scorch"]
+[ext_resource type="Script" path="res://game/demo/city/city_traffic.gd" id="12_traffic"]
+[ext_resource type="Script" path="res://game/enemies/tank_director.gd" id="13_tank"]
 
-[node name="DemoRun" type="Node3D" node_paths=PackedStringArray("region", "civilian_population")]
+[node name="DemoRun" type="Node3D" node_paths=PackedStringArray("region", "civilian_population", "city_traffic", "tank_director")]
 process_mode = 3
 script = ExtResource("1")
 region = NodePath("DemoRegion")
@@ -20,10 +22,20 @@ place_player_at_region_spawn = true
 regional_encounters = true
 demo_guidance = true
 civilian_population = NodePath("CivilianPopulation")
+city_traffic = NodePath("CityTraffic")
+tank_director = NodePath("TankDirector")
 
 [node name="CivilianPopulation" type="Node3D" parent="."]
 process_mode = 1
 script = ExtResource("9")
+
+[node name="CityTraffic" type="Node3D" parent="."]
+process_mode = 1
+script = ExtResource("12_traffic")
+
+[node name="TankDirector" type="Node3D" parent="."]
+process_mode = 1
+script = ExtResource("13_tank")
 
 [node name="DemoRegion" parent="." node_paths=PackedStringArray("ground_scorch") instance=ExtResource("2")]
 process_mode = 1
@@ -33,10 +45,13 @@ ground_scorch = NodePath("../GroundScorch")
 process_mode = 1
 base_drain_rate = 3.0
 life_per_size = 500.0
-maximum_size = 4.5
+maximum_size = 1000.0
+
+[node name="CameraRig" parent="Balancer" index="6"]
+base_far = 1500.0
 
 [node name="Camera3D" parent="Balancer/CameraRig/SpringArm3D" index="0"]
-far = 600.0
+far = 1500.0
 
 [node name="HumanDirector" parent="." instance=ExtResource("4")]
 process_mode = 1

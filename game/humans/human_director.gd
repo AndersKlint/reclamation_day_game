@@ -5,7 +5,7 @@ signal human_spawned(human: CharacterBody3D)
 
 const HumanScene: PackedScene = preload("res://game/humans/human.tscn")
 
-@export_range(1, 30) var maximum_active: int = 10
+@export_range(1, 30) var maximum_active: int = 16
 @export_range(1, 30) var early_population: int = 4
 @export var initial_delay: float = 8.0
 @export var initial_field_delay: float = 22.0
@@ -27,6 +27,26 @@ const HumanScene: PackedScene = preload("res://game/humans/human.tscn")
 @export var ranged_impact_radius: float = 1.8
 @export var ranged_capacity: float = 22.0
 @export var ranged_required_size: float = 1.8
+@export_group("City")
+@export var city_population: int = 12
+@export_range(0.0, 1.0) var city_ranged_fraction: float = 0.85
+@export var city_speed: float = 3.2
+@export var city_range: float = 20.0
+@export var city_damage: float = 15.0
+@export var city_windup: float = 1.5
+@export var city_cooldown: float = 3.2
+@export var city_impact_radius: float = 2.0
+@export var city_capacity: float = 26.0
+@export_group("Downtown")
+@export var downtown_population: int = 16
+@export_range(0.0, 1.0) var downtown_ranged_fraction: float = 1.0
+@export var downtown_speed: float = 3.4
+@export var downtown_range: float = 24.0
+@export var downtown_damage: float = 18.0
+@export var downtown_windup: float = 1.7
+@export var downtown_cooldown: float = 2.8
+@export var downtown_impact_radius: float = 2.2
+@export var downtown_capacity: float = 32.0
 
 var active: bool = false
 var tier: int = 0
@@ -111,20 +131,43 @@ func _physics_process(delta: float) -> void:
 			_zone_time = 0.0
 			_spawn_left = initial_field_delay if first_field_entry else zone_entry_delay
 		_zone_time += delta
-		_set_tier(2 if _zone == &"village" else (1 if _zone == &"approach" else 0))
+		_set_tier(_tier_for_zone(_zone))
 	for index: int in range(_humans.size() - 1, -1, -1):
 		if not is_instance_valid(_humans[index]) or _humans[index].is_queued_for_deletion():
 			_humans.remove_at(index)
 	_spawn_left -= delta
-	var limit: int = maximum_active if tier == 1 else mini(early_population, maximum_active)
-	if _region != null:
-		limit = mini(mini(maximum_active, 10), (7 + _progress_tier if tier == 2 else (4 + _progress_tier if tier == 1 else 2 + _progress_tier)))
-		if _zone_time > 30.0:
-			limit = mini(limit + 1, mini(maximum_active, 10))
+	var limit: int = _population_limit()
 	if _spawn_left > 0.0 or _humans.size() >= limit:
 		return
 	_spawn_left = late_spawn_interval if tier >= 1 else early_spawn_interval
 	_spawn_human()
+
+func _tier_for_zone(zone: StringName) -> int:
+	match zone:
+		&"approach":
+			return 1
+		&"village":
+			return 2
+		&"city":
+			return 3
+		&"downtown":
+			return 4
+		_:
+			return 0
+
+func _population_limit() -> int:
+	var limit: int = maximum_active if tier == 1 else mini(early_population, maximum_active)
+	if _region == null:
+		return limit
+	match tier:
+		3:
+			return mini(city_population, maximum_active)
+		4:
+			return mini(downtown_population, maximum_active)
+	limit = mini(mini(maximum_active, 10), (7 + _progress_tier if tier == 2 else (4 + _progress_tier if tier == 1 else 2 + _progress_tier)))
+	if _zone_time > 30.0:
+		limit = mini(limit + 1, mini(maximum_active, 10))
+	return limit
 
 func _spawn_human() -> void:
 	for step: int in _spawn_points.size():
@@ -132,11 +175,11 @@ func _spawn_human() -> void:
 		var point: Node3D = _spawn_points[index]
 		if not is_instance_valid(point):
 			continue
-		if point.global_position.distance_to(_balancer.global_position) < minimum_spawn_distance:
+		if not _spawn_clear_of_player(point.global_position):
 			continue
 		var spawn_position: Vector3 = point.global_position
 		if _region != null:
-			if StringName(point.get_meta(&"zone", &"")) != _zone or spawn_position.distance_to(_balancer.global_position) > minf(maximum_spawn_distance, home_leash):
+			if StringName(point.get_meta(&"zone", &"")) != _zone:
 				continue
 			spawn_position.y = float(_region.call("ground_height", spawn_position.x, spawn_position.z))
 			var map: RID = get_world_3d().get_navigation_map()
@@ -145,16 +188,24 @@ func _spawn_human() -> void:
 			var grounded: Vector3 = NavigationServer3D.map_get_closest_point(map, spawn_position)
 			if grounded.distance_to(spawn_position) > 1.5:
 				continue
-			var path: PackedVector3Array = NavigationServer3D.map_get_path(map, grounded, _balancer.global_position, true)
-			if path.is_empty() or path[path.size() - 1].distance_to(_balancer.global_position) > 3.0:
+			var edge_target: Vector3 = _combat_target(grounded)
+			edge_target.y = float(_region.call("ground_height", edge_target.x, edge_target.z))
+			var destination: Vector3 = NavigationServer3D.map_get_closest_point(map, edge_target)
+			if destination.distance_to(edge_target) > 1.5:
+				continue
+			var path: PackedVector3Array = NavigationServer3D.map_get_path(map, grounded, destination, true)
+			if path.is_empty() or path[path.size() - 1].distance_to(destination) > 3.0:
 				continue
 			var path_length: float = 0.0
 			for path_index: int in range(1, path.size()):
 				path_length += path[path_index - 1].distance_to(path[path_index])
-			if path_length > maximum_spawn_distance * 1.8:
+			var direct_distance: float = grounded.distance_to(destination)
+			if path_length > minf(maximum_spawn_distance * 1.8, direct_distance * 1.8 + 12.0):
 				continue
 			spawn_position = grounded + Vector3.UP * 0.1
-			if spawn_position.distance_to(_balancer.global_position) > home_leash:
+			if _surface_distance(spawn_position) > maximum_spawn_distance or _surface_distance(point.global_position) > home_leash:
+				continue
+			if not _spawn_clear_of_player(spawn_position) or not _inside_world_bounds(spawn_position):
 				continue
 			var shape: CapsuleShape3D = CapsuleShape3D.new()
 			shape.radius = 0.4
@@ -173,16 +224,15 @@ func _spawn_human() -> void:
 		if occupied:
 			continue
 		var human: CharacterBody3D = HumanScene.instantiate() as CharacterBody3D
-		if tier >= 1 and _random.randf() < (0.7 if tier == 2 else ranged_fraction):
-			human.ranged = true
-			human.movement_speed = ranged_speed
-			human.attack_range = ranged_range
-			human.damage = ranged_damage
-			human.windup = ranged_windup
-			human.cooldown = ranged_cooldown
-			human.impact_radius = ranged_impact_radius
-			human.life_capacity = ranged_capacity
-			human.required_size = ranged_required_size
+		var ranged_chance: float = ranged_fraction
+		if tier == 2:
+			ranged_chance = 0.7
+		elif tier == 3:
+			ranged_chance = city_ranged_fraction
+		elif tier == 4:
+			ranged_chance = downtown_ranged_fraction
+		if tier >= 1 and _random.randf() < ranged_chance:
+			_configure_ranged(human)
 		human.configure(_balancer)
 		human.configure_remains(get_parent() as Node3D, _ground_position)
 		if _region != null:
@@ -195,3 +245,58 @@ func _spawn_human() -> void:
 		_next_spawn = (index + 1) % _spawn_points.size()
 		human_spawned.emit(human)
 		return
+
+func _configure_ranged(human: CharacterBody3D) -> void:
+	human.ranged = true
+	human.required_size = ranged_required_size
+	match tier:
+		3:
+			human.movement_speed = city_speed
+			human.attack_range = city_range
+			human.damage = city_damage
+			human.windup = city_windup
+			human.cooldown = city_cooldown
+			human.impact_radius = city_impact_radius
+			human.life_capacity = city_capacity
+		4:
+			human.movement_speed = downtown_speed
+			human.attack_range = downtown_range
+			human.damage = downtown_damage
+			human.windup = downtown_windup
+			human.cooldown = downtown_cooldown
+			human.impact_radius = downtown_impact_radius
+			human.life_capacity = downtown_capacity
+		_:
+			human.movement_speed = ranged_speed
+			human.attack_range = ranged_range
+			human.damage = ranged_damage
+			human.windup = ranged_windup
+			human.cooldown = ranged_cooldown
+			human.impact_radius = ranged_impact_radius
+			human.life_capacity = ranged_capacity
+
+func _spawn_clear_of_player(position: Vector3) -> bool:
+	if not is_instance_valid(_balancer):
+		return false
+	var surface: Vector3 = position
+	if _balancer.has_method(&"get_combat_target"):
+		surface = _balancer.call(&"get_combat_target", position) as Vector3
+	var offset: Vector3 = position - surface
+	offset.y = 0.0
+	return offset.length() >= minimum_spawn_distance
+
+func _combat_target(position: Vector3) -> Vector3:
+	if _balancer.has_method(&"get_combat_target"):
+		return _balancer.call(&"get_combat_target", position) as Vector3
+	return _balancer.global_position
+
+func _surface_distance(position: Vector3) -> float:
+	var offset: Vector3 = position - _combat_target(position)
+	offset.y = 0.0
+	return offset.length()
+
+func _inside_world_bounds(position: Vector3) -> bool:
+	if _region == null or not _region.has_method(&"get_world_bounds"):
+		return true
+	var bounds: Rect2 = _region.call(&"get_world_bounds") as Rect2
+	return bounds.grow(-1.0).has_point(Vector2(position.x, position.z))

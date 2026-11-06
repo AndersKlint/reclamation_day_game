@@ -3,6 +3,7 @@ extends CanvasLayer
 const UpgradeDefinition = preload("res://game/upgrades/upgrade_definition.gd")
 
 signal upgrade_selected(definition: UpgradeDefinition)
+signal upgrade_batch_selected(definition: UpgradeDefinition)
 signal pause_requested()
 signal resume_requested()
 signal retry_requested()
@@ -16,7 +17,6 @@ var _progress_bar: ProgressBar
 var _location_label: Label
 var _overlay: ColorRect
 var _menu: VBoxContainer
-var _choice_buttons: Array[Button] = []
 
 
 func _ready() -> void:
@@ -94,9 +94,10 @@ func update_health(current: float, maximum: float) -> void:
 	_health_bar.value = clampf(current / maximum, 0.0, 1.0) if maximum > 0.0 else 0.0
 
 
-func update_growth(life: float, size: float, next_threshold: float) -> void:
-	var next_text: String = "All choices earned" if is_inf(next_threshold) else "Next choice at %.0f life" % next_threshold
-	_growth_label.text = "LIFE  %.0f     SIZE  %.2f×     %s" % [life, size, next_text]
+func update_growth(life: float, size: float, next_threshold: float, earned_tiers: int = 0) -> void:
+	var next_text: String = "NEXT CHOICE AT —" if is_inf(next_threshold) else "NEXT CHOICE AT %s" % _format_amount(next_threshold)
+	_growth_label.text = "LIFE  %s     SIZE  %.2f×\nTIER  %d     %s" % [
+		_format_amount(life), size, earned_tiers, next_text]
 
 
 func update_progress(drained: float, initial: float) -> void:
@@ -110,19 +111,27 @@ func update_location(title: String, detail: String) -> void:
 	_location_label.show()
 
 
-func show_upgrade_choices(definitions: Array[UpgradeDefinition]) -> void:
+func show_upgrade_choices(definitions: Array[UpgradeDefinition], pending_count: int = 1) -> void:
 	_clear_menu()
 	_label(_menu, "The shadow deepens", 28)
-	_label(_menu, "Choose what remains with you. Each choice stacks multiplicatively.")
+	if pending_count > 1:
+		_label(_menu, "%d growth choices are queued. Take one, or apply a single path to all %d." % [pending_count, pending_count])
+	else:
+		_label(_menu, "Choose what remains with you. Each choice stacks multiplicatively.")
+	var focus_target: Button = null
 	for definition: UpgradeDefinition in definitions:
 		if definition == null:
 			continue
 		var choice := _button(_menu, definition.title + "\n" + definition.description,
 			_select_upgrade.bind(definition))
-		_choice_buttons.append(choice)
+		if focus_target == null:
+			focus_target = choice
+		if pending_count > 1:
+			_button(_menu, "Apply %s to all %d queued growths" % [definition.title, pending_count],
+				_select_upgrade_batch.bind(definition))
 	_overlay.show()
-	if not _choice_buttons.is_empty():
-		_choice_buttons[0].grab_focus()
+	if focus_target != null:
+		focus_target.grab_focus()
 
 
 func show_pause() -> void:
@@ -154,16 +163,40 @@ func hide_overlays() -> void:
 
 
 func _clear_menu() -> void:
-	_choice_buttons.clear()
 	for child: Node in _menu.get_children():
 		_menu.remove_child(child)
 		child.queue_free()
 
 
 func _select_upgrade(definition: UpgradeDefinition) -> void:
-	for button: Button in _choice_buttons:
-		button.disabled = true
+	_disable_choice_buttons()
 	upgrade_selected.emit(definition)
+
+
+func _select_upgrade_batch(definition: UpgradeDefinition) -> void:
+	_disable_choice_buttons()
+	upgrade_batch_selected.emit(definition)
+
+
+func _disable_choice_buttons() -> void:
+	for child: Node in _menu.get_children():
+		if child is Button:
+			child.disabled = true
+
+
+func _format_amount(value: float) -> String:
+	if is_nan(value):
+		return "—"
+	var magnitude: float = absf(value)
+	if magnitude < 10_000.0:
+		return "%.0f" % value
+	if magnitude < 1_000_000.0:
+		return "%.1fK" % (value / 1_000.0)
+	if magnitude < 1_000_000_000.0:
+		return "%.2fM" % (value / 1_000_000.0)
+	if magnitude < 1_000_000_000_000.0:
+		return "%.2fB" % (value / 1_000_000_000.0)
+	return "%.2e" % value
 
 
 func _emit_menu_request(request: Signal) -> void:

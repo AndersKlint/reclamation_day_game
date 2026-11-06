@@ -53,6 +53,11 @@ func stop() -> void:
 	if _animation != null:
 		_animation.pause()
 
+func can_recycle() -> bool:
+	if not active or is_queued_for_deletion() or _drainable == null:
+		return false
+	return not bool(_drainable.get("is_depleted")) and float(_drainable.get("remaining_capacity")) >= float(_drainable.get("capacity"))
+
 func _enter(next: State) -> void:
 	state = next
 	_path.clear()
@@ -93,10 +98,12 @@ func _physics_process(delta: float) -> void:
 	if not active or is_queued_for_deletion() or not is_instance_valid(player):
 		return
 	if not bool(player.get("gameplay_enabled")):
+		velocity = Vector3.ZERO
 		return
 	_clock -= delta
+	var player_radius: float = _player_radius()
 	var distance: float = _flat_distance(global_position, player.global_position)
-	if state in [State.IDLE, State.STROLL] and distance < 13.0:
+	if state in [State.IDLE, State.STROLL] and distance < 13.0 + player_radius:
 		_enter(State.STARTLED)
 	match state:
 		State.IDLE:
@@ -106,7 +113,7 @@ func _physics_process(delta: float) -> void:
 			if _clock <= 0.0:
 				_enter(State.FLEE)
 		State.FLEE:
-			_safe_time = _safe_time + delta if distance > 25.0 else 0.0
+			_safe_time = _safe_time + delta if distance > 25.0 + player_radius else 0.0
 			if _safe_time >= 3.0:
 				_enter(State.IDLE)
 			elif _clock <= 0.0 and (_waypoint >= _path.size() or _flat_distance(_path[-1], player.global_position) < distance + 3.0):
@@ -158,6 +165,12 @@ func _create_remains() -> void:
 		effect.configure(_visual, BODY_SIZE, _ground_position)
 		effect.start()
 	queue_free()
+
+func _player_radius() -> float:
+	if is_instance_valid(player) and player.has_method("get_combat_radius"):
+		var radius: float = float(player.call("get_combat_radius"))
+		return maxf(0.0, radius) if is_finite(radius) else 0.0
+	return 0.0
 
 func _flat_distance(a: Vector3, b: Vector3) -> float:
 	return Vector2(a.x - b.x, a.z - b.z).length()

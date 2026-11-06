@@ -3,12 +3,14 @@ extends RefCounted
 const Scenery = preload("res://game/demo/targets/demo_scenery.gd")
 const Target = preload("res://game/demo/targets/demo_target.gd")
 const DepletionEffect = preload("res://game/draining/depletion_effect.gd")
+const CityAssets = preload("res://game/demo/city/city_assets.gd")
 const ROOT: String = "res://available-assets/retro3d-assets/"
 const Forest = preload("res://game/demo/world/forest_assets.gd")
 
 static func instantiate_target(kind: StringName, dimensions: Vector3, capacity: float, required_size: float) -> Node3D:
 	var wrapper: Target = Target.new()
 	_configure(wrapper, kind, dimensions)
+	wrapper.building_collapse = CityAssets.has_building(kind) or kind in [&"house1", &"house2", &"house3", &"house4", &"house5", &"shed"]
 	match kind:
 		&"bush", &"bush_alt", &"tree", &"tree_alt", &"pine", &"forest_tree1", &"forest_tree2", &"forest_tree3", &"forest_tree4", &"forest_trunk":
 			wrapper.depletion_style = DepletionEffect.Style.WOODEN
@@ -39,6 +41,11 @@ static func _configure(wrapper: Scenery, kind: StringName, dimensions: Vector3) 
 	wrapper.name = String(kind).to_pascal_case()
 	wrapper.dimensions = dimensions
 	wrapper.kind = kind
+	if CityAssets.has_building(kind):
+		wrapper.model_scene = CityAssets.building_scene(kind)
+		wrapper.texture = CityAssets.building_texture(kind)
+		wrapper.blocking = true
+		return
 	match kind:
 		&"forest_tree1", &"forest_tree2", &"forest_tree3", &"forest_tree4", &"forest_trunk", &"forest_rock":
 			var object_name: StringName = {&"forest_tree1": &"PSX_Tree1", &"forest_tree2": &"PSX_Tree2", &"forest_tree3": &"PSX_Tree3", &"forest_tree4": &"PSX_Tree4", &"forest_trunk": &"PSX_Treetrunk", &"forest_rock": &"PSX_Rock"}[kind]

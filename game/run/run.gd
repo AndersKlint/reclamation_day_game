@@ -6,6 +6,8 @@ const GameplaySfx = preload("res://game/run/gameplay_sfx.gd")
 
 enum State { RUNNING, PAUSED, CHOOSING, FAILED, REBIRTH, FINISHED }
 
+const MAX_BATCH_APPLICATIONS: int = 512
+
 @export_range(0.1, 1.0) var completion_ratio: float = 0.9
 @export_range(0.5, 10.0) var rebirth_duration: float = 4.0
 @export var region: Node3D
@@ -13,6 +15,8 @@ enum State { RUNNING, PAUSED, CHOOSING, FAILED, REBIRTH, FINISHED }
 @export var regional_encounters: bool = false
 @export var demo_guidance: bool = false
 @export var civilian_population: Node3D
+@export var city_traffic: Node3D
+@export var tank_director: Node3D
 var state: State = State.RUNNING
 var _guidance_elapsed: float = 0.0
 var _resolution_pending: bool = false
@@ -40,6 +44,7 @@ func _ready() -> void:
 	balancer.died.connect(_queue_resolution)
 	region.progress_changed.connect(_on_progress_changed)
 	interface.upgrade_selected.connect(_on_upgrade_selected)
+	interface.upgrade_batch_selected.connect(_on_upgrade_batch_selected)
 	interface.pause_requested.connect(_on_pause_requested)
 	interface.resume_requested.connect(_on_resume_requested)
 	interface.retry_requested.connect(_on_retry_requested)
@@ -51,6 +56,7 @@ func _ready() -> void:
 	human_director.configure(balancer, spawn_points, Callable(region, "ground_position"))
 	if regional_encounters:
 		human_director.configure_region(region)
+	_configure_city_managers()
 	_on_health_changed(balancer.health, balancer.max_health)
 	_on_growth_changed(balancer.life, balancer.size)
 	_on_progress_changed(region.drained_capacity, region.initial_capacity)
@@ -58,9 +64,20 @@ func _ready() -> void:
 	if civilian_population != null:
 		civilian_population.configure(region, balancer)
 		civilian_population.start()
+	if city_traffic != null:
+		city_traffic.call(&"start")
+	if tank_director != null:
+		tank_director.call(&"start")
 	if demo_guidance:
 		_update_location()
 	_enable_initial_gameplay.call_deferred()
+
+func _configure_city_managers() -> void:
+	# Traffic registers its finite car capacity while configuring, so it must precede the first progress read.
+	if city_traffic != null:
+		city_traffic.call(&"configure", region, balancer)
+	if tank_director != null:
+		tank_director.call(&"configure", region, balancer)
 
 func _process(delta: float) -> void:
 	if not demo_guidance or state != State.RUNNING or get_tree().paused:
@@ -77,7 +94,11 @@ func _update_location() -> void:
 		&"approach":
 			interface.update_location("Village approach", "The lamps mark the way north. Grow in the fields before facing the village resistance.")
 		&"village":
-			interface.update_location("Village", "Resistance is strongest here. Return to the fields if you need more life and reach.")
+			interface.update_location("Village", "The village holds firmer life than the fields. Fall back south if you need more life and reach.")
+		&"city":
+			interface.update_location("City outskirts", "Streets and storefronts carry deeper life. The towers wait in the downtown core.")
+		&"downtown":
+			interface.update_location("Downtown", "The tallest towers hold the deepest reserves. Push north to finish the reclamation.")
 
 func _enable_initial_gameplay() -> void:
 	if state == State.RUNNING and not _retry_pending:
@@ -101,7 +122,7 @@ func _on_health_changed(current: float, maximum: float) -> void:
 
 func _on_growth_changed(life: float, size: float) -> void:
 	upgrades.record_life(life)
-	interface.update_growth(life, size, upgrades.next_threshold)
+	interface.update_growth(life, size, upgrades.next_threshold, upgrades.earned_tiers)
 	_queue_resolution()
 
 func _on_progress_changed(drained: float, initial: float) -> void:
@@ -132,7 +153,7 @@ func _resolve_update() -> void:
 		state = State.CHOOSING
 		balancer.set_gameplay_enabled(false)
 		get_tree().paused = true
-		interface.show_upgrade_choices(upgrades.options)
+		interface.show_upgrade_choices(upgrades.options, upgrades.pending_rewards)
 	elif get_tree().paused:
 		_enter_running()
 
@@ -143,8 +164,28 @@ func _on_upgrade_selected(definition: UpgradeDefinition) -> void:
 		return
 	state = State.RUNNING
 	balancer.apply_upgrade(definition.effects)
+	_refresh_growth_display()
 	interface.hide_overlays()
 	_queue_resolution()
+
+func _on_upgrade_batch_selected(definition: UpgradeDefinition) -> void:
+	if state != State.CHOOSING or definition == null or not upgrades.options.has(definition):
+		return
+	if not upgrades.has_pending():
+		return
+	var queued: int = upgrades.consume_all_pending()
+	if queued <= 0:
+		return
+	state = State.RUNNING
+	# Debug-inflated queues cannot stall a frame; accumulated multipliers saturate long before this bound.
+	for _index: int in mini(queued, MAX_BATCH_APPLICATIONS):
+		balancer.apply_upgrade(definition.effects)
+	_refresh_growth_display()
+	interface.hide_overlays()
+	_queue_resolution()
+
+func _refresh_growth_display() -> void:
+	interface.update_growth(balancer.life, balancer.size, upgrades.next_threshold, upgrades.earned_tiers)
 
 func _on_pause_requested() -> void:
 	if state != State.RUNNING:
@@ -170,9 +211,7 @@ func _enter_running() -> void:
 func _fail_run() -> void:
 	state = State.FAILED
 	balancer.set_gameplay_enabled(false)
-	human_director.stop()
-	if civilian_population != null:
-		civilian_population.stop()
+	_stop_managers()
 	get_tree().paused = true
 	interface.hide_overlays()
 	interface.show_results(false, balancer.life, balancer.size, region.drained_capacity, region.initial_capacity)
@@ -181,9 +220,7 @@ func _begin_rebirth() -> void:
 	state = State.REBIRTH
 	interface.hide_overlays()
 	balancer.set_gameplay_enabled(false)
-	human_director.stop()
-	if civilian_population != null:
-		civilian_population.stop()
+	_stop_managers()
 	get_tree().paused = false
 	region.renew(rebirth_duration)
 	life_release.begin(balancer.global_position, balancer.get_node("Visuals"), rebirth_duration)
@@ -200,10 +237,17 @@ func _on_retry_requested() -> void:
 		return
 	_retry_pending = true
 	balancer.set_gameplay_enabled(false)
+	_stop_managers()
+	_reload_run.call_deferred()
+
+func _stop_managers() -> void:
 	human_director.stop()
 	if civilian_population != null:
 		civilian_population.stop()
-	_reload_run.call_deferred()
+	if city_traffic != null:
+		city_traffic.call(&"stop")
+	if tank_director != null:
+		tank_director.call(&"stop")
 
 func _reload_run() -> void:
 	get_tree().paused = false

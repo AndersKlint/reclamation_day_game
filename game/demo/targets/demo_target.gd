@@ -7,6 +7,7 @@ const WITHER_SHADER: Shader = preload("res://game/world/wither.gdshader")
 
 var drainable: Drainable
 var depletion_style: DepletionEffect.Style = DepletionEffect.Style.RUBBLE
+@export var building_collapse: bool = false
 var ground_position: Callable
 var _depletion_effect: DepletionEffect
 var _collapsed: bool = false
@@ -99,7 +100,7 @@ func _on_drained(_amount: float) -> void:
 	_update_label()
 
 func _update_label() -> void:
-	var title: String = "House" if String(kind).begins_with("house") else String(kind).replace("_alt", "").capitalize()
+	var title: String = "House" if String(kind).begins_with("house") else String(kind).trim_prefix("city_").replace("_alt", "").capitalize()
 	_label.text = "%s · size %.1f%s" % [title, drainable.required_size, " · spent" if drainable.is_depleted else ""]
 
 func _on_depleted() -> void:
@@ -114,6 +115,7 @@ func _start_depletion() -> void:
 	var collision: CollisionShape3D = get_node_or_null("Body/CollisionShape3D") as CollisionShape3D
 	if collision != null:
 		collision.set_deferred("disabled", true)
+	_depletion_effect.building_collapse = building_collapse
 	_depletion_effect.start()
 
 func renew(duration: float) -> void:
