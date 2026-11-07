@@ -91,8 +91,16 @@ roots=PackedStringArray("res://available-assets/retro3d-assets", "res://availabl
 
 [physics]
 
+common/physics_interpolation=true
 3d/physics_engine="Jolt Physics"
 
 [rendering]
 
 rendering_device/driver.windows="d3d12"
+
+[autoload]
+
+
+
+
+

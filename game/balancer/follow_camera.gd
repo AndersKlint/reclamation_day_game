@@ -36,6 +36,8 @@ var _snap_framing: bool = false
 func _ready() -> void:
 	target = get_parent() as CharacterBody3D
 	top_level = true
+	# Rigs update every frame; letting the engine interpolate them would fight the follow lerp.
+	set_physics_interpolation_mode(Node.PHYSICS_INTERPOLATION_MODE_OFF)
 	global_rotation = Vector3.ZERO
 	global_position = _pivot_position()
 	arm.rotation.x = deg_to_rad(initial_pitch)
@@ -68,13 +70,14 @@ func _process(delta: float) -> void:
 	if not gameplay_enabled or get_tree().paused:
 		return
 	var distance: float = _desired_distance()
+	var pivot: Vector3 = _displayed_pivot_position()
 	if _snap_framing:
-		global_position = _pivot_position()
+		global_position = pivot
 		arm.spring_length = distance
 		_snap_framing = false
 	else:
 		var weight: float = 1.0 - exp(-follow_speed * delta)
-		global_position = global_position.lerp(_pivot_position(), weight)
+		global_position = global_position.lerp(pivot, weight)
 		var growth_weight: float = 1.0 - exp(-growth_follow_speed * delta)
 		arm.spring_length = lerpf(arm.spring_length, distance, growth_weight)
 	_update_arm_collision(distance)
@@ -82,6 +85,9 @@ func _process(delta: float) -> void:
 
 func _pivot_position() -> Vector3:
 	return target.global_position + Vector3.UP * target_size * 1.1
+
+func _displayed_pivot_position() -> Vector3:
+	return target.get_global_transform_interpolated().origin + Vector3.UP * target_size * 1.1
 
 func _desired_distance() -> float:
 	return base_distance + (target_size - 1.0) * distance_per_size

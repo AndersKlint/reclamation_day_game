@@ -16,10 +16,13 @@ const MAX_EFFECTIVE_DRAIN_RATE: float = 10000.0
 const MAX_UPGRADE_MULTIPLIER: float = 1_000_000.0
 const MAX_ACCUMULATED_MULTIPLIER: float = 1_000_000.0
 const MAX_LIFE: float = 1_000_000_000_000_000_000_000_000_000_000.0
+const BANK_PER_TURN_RATE: float = 0.03
+const MAX_BANK: float = 0.035
+const BANK_RESPONSE: float = 6.0
 
 @export var base_movement_speed: float = 6.0
 @export var acceleration: float = 24.0
-@export var turning_speed: float = 14.0
+@export var turning_speed: float = 6.0
 @export var base_drain_reach: float = 2.8
 @export var base_drain_rate: float = 1.6
 @export var max_health: float = 100.0
@@ -33,6 +36,7 @@ var movement_multiplier: float = 1.0
 var reach_multiplier: float = 1.0
 var rate_multiplier: float = 1.0
 var _geometry_update_pending: bool = false
+var _bank: float = 0.0
 var effective_movement_speed: float:
 	get:
 		var raw: float = base_movement_speed * movement_multiplier
@@ -53,9 +57,9 @@ var effective_drain_rate: float:
 @onready var drain_area: Area3D = $DrainArea
 @onready var body_shape: CollisionShape3D = $CollisionShape3D
 @onready var visuals: Node3D = $Visuals
+@onready var smoke: Node3D = $Visuals/ReaperSmoke
 @onready var drain_vfx: Node3D = $DrainVfx
 @onready var drain_audio: AudioStreamPlayer = $DrainAudio
-@onready var footsteps: Node = $Footsteps
 @onready var collection_point: Marker3D = $CollectionPoint
 @onready var camera_rig: Node3D = $CameraRig
 
@@ -73,29 +77,33 @@ func _ready() -> void:
 func _physics_process(delta: float) -> void:
 	if not gameplay_enabled or Input.mouse_mode != Input.MOUSE_MODE_CAPTURED:
 		velocity = Vector3.ZERO
-		footsteps.reset_cadence()
 		return
 	var input: Vector2 = Input.get_vector(&"move_left", &"move_right", &"move_forward", &"move_backward")
 	var direction: Vector3 = camera_rig.global_basis * Vector3(input.x, 0.0, input.y)
+	var turn_rate: float = 0.0
 	if not direction.is_zero_approx():
 		var facing: float = atan2(-direction.x, -direction.z)
-		visuals.rotation.y = lerp_angle(visuals.rotation.y, facing, 1.0 - exp(-turning_speed * delta))
+		var previous_facing: float = visuals.rotation.y
+		visuals.rotation.y = lerp_angle(previous_facing, facing, 1.0 - exp(-turning_speed * delta))
+		turn_rate = angle_difference(previous_facing, visuals.rotation.y) / maxf(delta, 0.0001)
+	var target_bank: float = clampf(turn_rate * BANK_PER_TURN_RATE, -MAX_BANK, MAX_BANK)
+	_bank = lerpf(_bank, target_bank, 1.0 - exp(-BANK_RESPONSE * delta))
+	visuals.rotation.z = _bank
 	velocity.x = move_toward(velocity.x, direction.x * effective_movement_speed, effective_acceleration * delta)
 	velocity.z = move_toward(velocity.z, direction.z * effective_movement_speed, effective_acceleration * delta)
 	if not is_on_floor():
 		velocity += get_gravity() * delta
-	var previous_position: Vector3 = global_position
 	move_and_slide()
-	footsteps.record_movement(previous_position)
 
 func set_gameplay_enabled(enabled: bool) -> void:
 	gameplay_enabled = enabled and health > 0.0
 	velocity = Vector3.ZERO
+	_bank = 0.0
+	visuals.rotation.z = 0.0
 	camera_rig.set_gameplay_enabled(gameplay_enabled)
 	drain_area.enabled = gameplay_enabled
 	drain_vfx.set_enabled(gameplay_enabled)
 	drain_audio.set_enabled(gameplay_enabled)
-	footsteps.set_enabled(gameplay_enabled)
 
 func gain_life(amount: float) -> void:
 	if not is_finite(amount) or amount <= 0.0 or health <= 0.0:
@@ -157,6 +165,7 @@ func apply_upgrade(effects: Dictionary[String, float]) -> void:
 
 func _refresh_growth() -> void:
 	visuals.scale = Vector3.ONE * size
+	smoke.configure(size)
 	collection_point.position.y = 1.25 * size
 	drain_area.source_size = size
 	drain_area.drain_rate = effective_drain_rate

@@ -39,6 +39,7 @@ func _ready() -> void:
 	assert(region != null, "Run requires an injected region")
 	if place_player_at_region_spawn:
 		balancer.global_position = region.get_player_spawn()
+		balancer.reset_physics_interpolation()
 	balancer.health_changed.connect(_on_health_changed)
 	balancer.growth_changed.connect(_on_growth_changed)
 	balancer.died.connect(_queue_resolution)
