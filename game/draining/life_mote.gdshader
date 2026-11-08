@@ -1,34 +1,59 @@
 shader_type spatial;
 render_mode unshaded, cull_disabled, depth_draw_never, blend_mix;
 
-uniform float emission_strength : hint_range(0.0, 12.0, 0.1) = 6.0;
-uniform float rim_strength : hint_range(0.0, 12.0, 0.1) = 4.0;
+uniform vec4 dark_color = vec4(0.0, 0.0, 0.0, 1.0);
+uniform vec4 red_color = vec4(0.95, 0.04, 0.03, 1.0);
+uniform vec4 white_color = vec4(1.0, 1.0, 1.0, 1.0);
+uniform float emission_strength : hint_range(0.0, 8.0, 0.1) = 3.0;
+uniform float size_scale : hint_range(0.1, 160.0, 0.5) = 1.0;
+uniform float grain_scale : hint_range(1.0, 16.0, 0.5) = 6.0;
 
 varying vec4 mote;
 
+float hash21(vec2 point) {
+	point = fract(point * vec2(123.34, 456.21));
+	point += dot(point, point + 45.32);
+	return fract(point.x * point.y);
+}
+
+float value_noise(vec2 point) {
+	vec2 cell = floor(point);
+	vec2 local = fract(point);
+	vec2 blend = local * local * (3.0 - 2.0 * local);
+	float a = hash21(cell);
+	float b = hash21(cell + vec2(1.0, 0.0));
+	float c = hash21(cell + vec2(0.0, 1.0));
+	float d = hash21(cell + vec2(1.0, 1.0));
+	return mix(mix(a, b, blend.x), mix(c, d, blend.x), blend.y);
+}
+
 void vertex() {
 	mote = INSTANCE_CUSTOM;
-	float dark = step(0.48, mote.x);
-	float size = mix(0.075, 0.14, dark) * mix(0.85, 1.15, mote.y);
+	float pulse = 0.94 + 0.06 * sin(TIME * mix(1.5, 3.5, mote.x) + mote.z * TAU);
+	float size = mix(0.0375, 0.07, step(0.48, mote.x)) * mix(0.8, 1.2, mote.y) * size_scale * pulse;
 	MODELVIEW_MATRIX = VIEW_MATRIX * mat4(INV_VIEW_MATRIX[0], INV_VIEW_MATRIX[1], INV_VIEW_MATRIX[2], MODEL_MATRIX[3]);
-	VERTEX.xy *= vec2(size, size * mix(1.35, 1.85, mote.z));
-	float angle = (mote.y - 0.5) * 0.7;
-	VERTEX.xy = mat2(vec2(cos(angle), sin(angle)), vec2(-sin(angle), cos(angle))) * VERTEX.xy;
+	VERTEX.xy *= size * mix(0.55, 1.0, mote.w);
 }
 
 void fragment() {
 	vec2 point = UV * 2.0 - 1.0;
-	float dark = step(0.48, mote.x);
-	float bend = mix(-0.16, 0.16, mote.z);
-	point.x -= bend * (abs(point.y + 0.2) - 0.2);
-	float width = mix(0.48, 0.62, mote.y);
-	float distance_to_edge = abs(point.x) / width + abs(point.y + 0.12) / mix(0.72, 0.98, step(-0.12, point.y)) - 1.0;
-	float edge_aa = max(fwidth(distance_to_edge), 0.0001);
-	float mask = 1.0 - smoothstep(-0.5 * edge_aa, 0.5 * edge_aa, distance_to_edge);
-	float rim = smoothstep(-0.09 - 0.5 * edge_aa, -0.09 + 0.5 * edge_aa, distance_to_edge);
-	vec3 pale = mix(vec3(0.62, 0.94, 0.88), vec3(0.92, 1.0, 0.96), mote.z);
-	vec3 rim_color = vec3(0.22, 0.85, 0.72);
-	ALBEDO = mix(pale, vec3(0.004, 0.007, 0.009), dark);
-	EMISSION = mix(pale * emission_strength, rim_color * rim_strength * rim, dark);
+	float radius = length(point);
+	float edge_aa = max(fwidth(radius), 0.0005);
+
+	float spin = mote.z * TAU;
+	vec2 rotated = mat2(vec2(cos(spin), sin(spin)), vec2(-sin(spin), cos(spin))) * point;
+	float grain = value_noise(rotated * grain_scale + mote.y * 17.0);
+	float coarse = value_noise(rotated * grain_scale * 0.45 + mote.x * 29.0);
+
+	float mask = 1.0 - smoothstep(0.94 - edge_aa, 1.0 + edge_aa, radius);
+	float palette = fract(mote.y * 7.13 + mote.z * 3.71);
+	vec3 particle_color = palette < 0.3333 ? dark_color.rgb
+		: (palette < 0.6666 ? red_color.rgb : white_color.rgb);
+	particle_color = mix(particle_color, vec3(mix(0.01, 0.07, coarse)), 1.0 - step(0.3333, palette));
+
+	float glow = mix(0.35, 1.0, 1.0 - smoothstep(0.0, 1.0, radius));
+	vec3 tinted = particle_color * glow * mix(0.55, 1.0, coarse) * mix(0.85, 1.0, grain);
+	ALBEDO = tinted * 0.2;
+	EMISSION = tinted * emission_strength;
 	ALPHA = mask * mote.w;
 }
