@@ -61,7 +61,7 @@ void process() {
 	float birth_size = USERDATA5.y;
 	// Drift direction curves slowly, so puffs keep scattering outwards instead of orbiting in place.
 	float drift_angle = USERDATA1.x + USERDATA1.w * sin(age * USERDATA4.x + USERDATA4.y);
-	float spread = outward_speed * USERDATA1.y * birth_size * (0.35 + 1.3 * life);
+	float spread = outward_speed * USERDATA1.y * birth_size * (0.20 + 2.1 * life);
 	TRANSFORM[3].xz += vec2(cos(drift_angle), sin(drift_angle)) * spread * DELTA;
 	float lift = rise_speed * USERDATA1.z * birth_size * (0.25 + 0.9 * life);
 	TRANSFORM[3].y += lift * DELTA;

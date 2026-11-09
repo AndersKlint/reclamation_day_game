@@ -3,6 +3,7 @@ extends CharacterBody3D
 const TankAssets = preload("res://game/enemies/tank_assets.gd")
 const DEPLETION_EFFECT: PackedScene = preload("res://game/draining/depletion_effect.tscn")
 const DEPLETION_SCRIPT = preload("res://game/draining/depletion_effect.gd")
+const Drainable = preload("res://game/draining/drainable.gd")
 const CANNON_SOUNDS: Array[AudioStream] = [
 	preload("res://available-assets/sfx/prosoundcollection/Gamemaster Audio - Pro Sound Collection v1.3 - 16bit 48k/Guns_Weapons/Guns/gun_tank_cannon_turret_shot_01.wav"),
 	preload("res://available-assets/sfx/prosoundcollection/Gamemaster Audio - Pro Sound Collection v1.3 - 16bit 48k/Guns_Weapons/Guns/gun_tank_cannon_turret_shot_02.wav"),
@@ -52,7 +53,7 @@ var _route_check_left: float = 0.0
 var _route_started: bool = false
 var _warning_material: StandardMaterial3D
 var _ground_position: Callable
-@onready var drainable: Area3D = $Drainable
+@onready var drainable: Drainable = $Drainable
 @onready var _visual: Node3D = $Visual
 @onready var _warning: MeshInstance3D = $Warning
 @onready var _fire_voice: AudioStreamPlayer3D = $CannonShot
@@ -106,7 +107,8 @@ func _apply_variant() -> void:
 func _ready() -> void:
 	drainable.capacity = life_capacity
 	drainable.remaining_capacity = life_capacity
-	drainable.required_size = required_size
+	drainable.required_size = Drainable.gate_to_size(required_size)
+	drainable.direct_life_share = 0.5
 	drainable.emission_offset = Vector3(0.0, 1.4, 0.0)
 	drainable.emission_radius = 1.6
 	drainable.depleted.connect(_on_depleted)
@@ -345,6 +347,7 @@ func _create_wreck() -> void:
 		parent.add_child(effect)
 		effect.global_transform = Transform3D(Basis.IDENTITY, global_position)
 		effect.style = DEPLETION_SCRIPT.Style.RUBBLE
+		effect.absorbed_life = drainable.absorbed_capacity
 		_visual.reparent(effect, true)
 		effect.configure(_visual, TankAssets.size_for(_heavy), _ground_position)
 		effect.start()

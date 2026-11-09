@@ -277,6 +277,9 @@ func _register_target(target: Node3D, capacity: float) -> void:
 	initial_capacity += capacity
 	_targets.append(target)
 	_target_root.add_child(target)
+	var effect: Node = target.get_node_or_null("DepletionEffect")
+	if effect != null and effect.has_signal(&"life_absorbed"):
+		effect.connect(&"life_absorbed", _on_drained)
 
 func _on_drained(amount: float) -> void:
 	drained_capacity = minf(initial_capacity, drained_capacity + amount)

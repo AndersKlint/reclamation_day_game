@@ -21,7 +21,8 @@ func configure_drain(capacity: float, required_size: float) -> void:
 	drainable = Drainable.new()
 	drainable.name = "Drainable"
 	drainable.capacity = maxf(0.1, capacity)
-	drainable.required_size = maxf(0.1, required_size)
+	drainable.required_size = Drainable.gate_to_size(required_size)
+	drainable.direct_life_share = 0.5 if depletion_style == DepletionEffect.Style.RUBBLE else 1.0
 	drainable.collision_layer = 8
 	drainable.collision_mask = 0
 	drainable.monitoring = false
@@ -112,11 +113,17 @@ func _start_depletion() -> void:
 	set_process(false)
 	for light: Node in visual.find_children("*", "Light3D", true, false):
 		(light as Light3D).visible = false
-	var collision: CollisionShape3D = get_node_or_null("Body/CollisionShape3D") as CollisionShape3D
-	if collision != null:
-		collision.set_deferred("disabled", true)
+	_depletion_effect.absorbed_life = drainable.absorbed_capacity
+	_depletion_effect.flattened.connect(_clear_collision, CONNECT_ONE_SHOT)
 	_depletion_effect.building_collapse = building_collapse
 	_depletion_effect.start()
+
+
+func _clear_collision() -> void:
+	for node: Node in find_children("*", "CollisionShape3D", true, false):
+		var shape: CollisionShape3D = node as CollisionShape3D
+		if shape.get_parent() is StaticBody3D:
+			shape.set_deferred(&"disabled", true)
 
 func renew(duration: float) -> void:
 	if _collapsed or drainable.is_depleted:

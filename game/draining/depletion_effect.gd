@@ -1,17 +1,44 @@
 extends Node3D
 
+signal life_absorbed(amount: float)
+signal flattened()
+
 enum Style { WOODEN, HUMANOID, RUBBLE }
 
 const ANIMATED_COLLAPSE_BUDGET: int = 12
 const STATIC_BUILDING_PIECES: int = 48
 const STATIC_PROP_PIECES: int = 12
 const GROUND_SAMPLE_BUDGET: int = 32
+const MAGNET_FALL_GRAVITY: float = 14.0
+const MAGNET_BASE_ACCELERATION: float = 12.0
+const MAGNET_PULL: float = 900.0
+const MAGNET_MAX_ACCELERATION: float = 180.0
+const MAGNET_MAX_SPEED: float = 55.0
+const MAGNET_CONSUME_RADIUS: float = 0.6
+const MAGNET_SHRINK_DISTANCE: float = 1.4
+const MAGNET_MAX_LIFETIME: float = 30.0
 
 static var _animated_collapses: int = 0
+
+class MagnetPiece:
+	var batch: MultiMesh
+	var slot: int = 0
+	var position: Vector3
+	var basis: Basis
+	var landing_basis: Basis
+	var velocity: Vector3
+	var landing_y: float = 0.0
+	var age: float = 0.0
+	var delay: float = 0.0
+	var spin: float = 0.0
+	var life_share: float = 0.0
+	var settled: bool = false
+	var consumed: bool = false
 
 @export var style: Style = Style.RUBBLE
 @export var building_collapse: bool = false
 var female_voice: bool = false
+var absorbed_life: float = 0.0
 @export_range(0.1, 5.0, 0.05) var building_collapse_duration: float = 0.8
 @export_range(0.1, 5.0, 0.05) var plant_collapse_duration: float = 1.15
 @export var dust_color: Color = Color(0.56, 0.49, 0.37, 0.48)
@@ -31,6 +58,17 @@ var _started: bool = false
 var _owns_animated_collapse: bool = false
 var _ground_samples_remaining: int = GROUND_SAMPLE_BUDGET
 var _fallback_ground_height: float
+var _magnet_enabled: bool = false
+var _magnet_target: Node3D
+var _magnet_pieces: Array[MagnetPiece] = []
+var _magnet_elapsed: float = 0.0
+var _pending_life: float = 0.0
+var _absorb_sound_played: bool = false
+var _flattened: bool = false
+
+
+func _ready() -> void:
+	set_process(false)
 
 
 func _exit_tree() -> void:
@@ -52,13 +90,9 @@ func start() -> void:
 	if _started:
 		return
 	_started = true
-	var ancestor: Node = get_parent()
-	while ancestor != null:
-		var sfx: Node = ancestor.get_node_or_null("GameplaySfx")
-		if sfx != null:
-			sfx.play_depletion(style, global_position, female_voice, building_collapse, _size)
-			break
-		ancestor = ancestor.get_parent()
+	var sfx: Node = _find_gameplay_sfx()
+	if sfx != null:
+		sfx.play_depletion(style, global_position, female_voice, building_collapse, _size)
 	_base_y = global_position.y
 	_fallback_ground_height = _ground_height(Vector3.ZERO)
 	var has_visual: bool = is_instance_valid(_visual)
@@ -68,6 +102,7 @@ func start() -> void:
 	_owns_animated_collapse = has_visual and _animated_collapses < ANIMATED_COLLAPSE_BUDGET
 	if _owns_animated_collapse:
 		_animated_collapses += 1
+	_magnet_enabled = style == Style.RUBBLE and absorbed_life > 0.0 and _resolve_magnet_target()
 	if _owns_animated_collapse and style != Style.HUMANOID:
 		_spawn_dust()
 	_spawn_fragments(_owns_animated_collapse)
@@ -84,6 +119,110 @@ func start() -> void:
 		tween.tween_method(_collapse, 0.0, 1.0, plant_collapse_duration if style == Style.WOODEN else 0.45).set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_IN)
 	tween.tween_callback(_hide_visual)
 	tween.tween_callback(_release_animated_collapse)
+
+
+func _resolve_magnet_target() -> bool:
+	if not is_inside_tree():
+		return false
+	_magnet_target = get_tree().get_first_node_in_group(&"player") as Node3D
+	return is_instance_valid(_magnet_target)
+
+
+func _process(delta: float) -> void:
+	if _magnet_pieces.is_empty():
+		return
+	var step: float = minf(delta, 1.0 / 30.0)
+	_magnet_elapsed += step
+	var target_global: Vector3 = _magnet_global_position()
+	var has_target: bool = target_global.is_finite()
+	var target: Vector3 = to_local(target_global) if has_target else Vector3.ZERO
+	var alive: bool = false
+	for piece: MagnetPiece in _magnet_pieces:
+		if piece.consumed:
+			continue
+		alive = true
+		piece.age += step
+		if not piece.settled:
+			piece.velocity.y -= MAGNET_FALL_GRAVITY * step
+			piece.position += piece.velocity * step
+			if piece.position.y <= piece.landing_y:
+				piece.position.y = piece.landing_y
+				piece.basis = piece.landing_basis
+				piece.velocity = Vector3.ZERO
+				piece.settled = true
+			_write_magnet_piece(piece, 1.0)
+			continue
+		if not has_target or piece.age < piece.delay:
+			continue
+		if not _absorb_sound_played:
+			_absorb_sound_played = true
+			_play_absorb_sound()
+		var offset: Vector3 = target - piece.position
+		var distance: float = offset.length()
+		var direction: Vector3 = offset / distance
+		var acceleration: float = minf(MAGNET_BASE_ACCELERATION + MAGNET_PULL / maxf(distance * distance, 0.04), MAGNET_MAX_ACCELERATION)
+		piece.velocity += direction * acceleration * step
+		if piece.velocity.length_squared() > MAGNET_MAX_SPEED * MAGNET_MAX_SPEED:
+			piece.velocity = piece.velocity.normalized() * MAGNET_MAX_SPEED
+		piece.position += piece.velocity * step
+		var remaining: Vector3 = target - piece.position
+		var remaining_length: float = remaining.length()
+		if distance <= MAGNET_CONSUME_RADIUS or remaining_length <= MAGNET_CONSUME_RADIUS or remaining.dot(piece.velocity) <= 0.0:
+			piece.consumed = true
+			_pending_life += piece.life_share
+			piece.batch.set_instance_transform(piece.slot, Transform3D(Basis.from_scale(Vector3.ZERO), piece.position))
+			continue
+		piece.basis = piece.basis.rotated(Vector3.UP, piece.spin * step)
+		var shrink: float = clampf((remaining_length - MAGNET_CONSUME_RADIUS) / MAGNET_SHRINK_DISTANCE, 0.0, 1.0)
+		_write_magnet_piece(piece, shrink)
+	if _pending_life > 0.0:
+		_flush_absorbed_life()
+	if not alive or _magnet_elapsed > MAGNET_MAX_LIFETIME:
+		_magnet_pieces.clear()
+		queue_free()
+
+
+func _flush_absorbed_life() -> void:
+	var amount: float = _pending_life
+	_pending_life = 0.0
+	if amount <= 0.0:
+		return
+	life_absorbed.emit(amount)
+	if is_instance_valid(_magnet_target) and _magnet_target.has_method(&"gain_life"):
+		_magnet_target.call(&"gain_life", amount)
+
+
+func _play_absorb_sound() -> void:
+	var sfx: Node = _find_gameplay_sfx()
+	if sfx != null and sfx.has_method(&"play_rubble_absorb"):
+		sfx.call(&"play_rubble_absorb", _size)
+
+
+func _find_gameplay_sfx() -> Node:
+	var ancestor: Node = get_parent()
+	while ancestor != null:
+		var sfx: Node = ancestor.get_node_or_null("GameplaySfx")
+		if sfx != null:
+			return sfx
+		ancestor = ancestor.get_parent()
+	return null
+
+
+func _magnet_global_position() -> Vector3:
+	if not is_instance_valid(_magnet_target):
+		if is_inside_tree():
+			_magnet_target = get_tree().get_first_node_in_group(&"player") as Node3D
+		if not is_instance_valid(_magnet_target):
+			return Vector3.INF
+	if _magnet_target.has_method(&"get_collection_position"):
+		var value: Variant = _magnet_target.call(&"get_collection_position")
+		if value is Vector3 and (value as Vector3).is_finite():
+			return value
+	return _magnet_target.global_position
+
+
+func _write_magnet_piece(piece: MagnetPiece, scale_factor: float) -> void:
+	piece.batch.set_instance_transform(piece.slot, Transform3D(piece.basis.scaled(Vector3.ONE * scale_factor), piece.position))
 
 
 func _release_animated_collapse() -> void:
@@ -165,6 +304,9 @@ func _hide_visual() -> void:
 			_visual.queue_free()
 		else:
 			_visual.visible = false
+	if not _flattened:
+		_flattened = true
+		flattened.emit()
 
 
 func _spawn_fragments(animated: bool) -> void:
@@ -220,7 +362,27 @@ func _spawn_fragments(animated: bool) -> void:
 			rotation.x += PI * 0.5
 		var basis: Basis = Basis.from_euler(rotation).scaled_local(dimensions)
 		destination.y = _fragment_ground_height(destination, basis)
-		var fragment_transform: Transform3D = Transform3D(basis, destination + Vector3.UP * rng.randf_range(0.2, maxf(0.25, _size.y * 0.65)))
+		var spawn_height: float = rng.randf_range(0.2, maxf(0.25, _size.y * 0.65))
+		if _magnet_enabled:
+			spawn_height = rng.randf_range(0.2, clampf(_size.y * 0.65, 0.25, 5.0))
+		var fragment_transform: Transform3D = Transform3D(basis, destination + Vector3.UP * spawn_height)
+		if _magnet_enabled:
+			var slot: int = indices[material_index]
+			batches[material_index].set_instance_transform(slot, fragment_transform)
+			batches[material_index].visible_instance_count = slot + 1
+			var piece: MagnetPiece = MagnetPiece.new()
+			piece.batch = batches[material_index]
+			piece.slot = slot
+			piece.position = fragment_transform.origin
+			piece.basis = basis
+			piece.landing_basis = basis
+			piece.landing_y = destination.y
+			piece.delay = 0.45 + building_collapse_duration + rng.randf_range(0.0, 0.35)
+			piece.spin = rng.randf_range(-4.5, 4.5)
+			piece.life_share = absorbed_life / float(count)
+			_magnet_pieces.append(piece)
+			indices[material_index] += 1
+			continue
 		if not animated:
 			batches[material_index].set_instance_transform(indices[material_index], Transform3D(basis, destination))
 			batches[material_index].visible_instance_count = indices[material_index] + 1
@@ -235,6 +397,8 @@ func _spawn_fragments(animated: bool) -> void:
 		tween.tween_property(fragment, "position", destination, rng.randf_range(0.55, 1.15)).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_IN)
 		tween.tween_callback(_settle_fragment.bind(fragment, batches[material_index], indices[material_index]))
 		indices[material_index] += 1
+	if not _magnet_pieces.is_empty():
+		set_process(true)
 
 
 func _settle_fragment(fragment: MeshInstance3D, batch: MultiMesh, index: int) -> void:

@@ -8,12 +8,15 @@ const FLESH: Array[AudioStream] = [preload("res://available-assets/sfx/prosoundc
 const BUILDING_RUMBLE: Array[AudioStream] = [preload("res://available-assets/sfx/prosoundcollection/Gamemaster Audio - Pro Sound Collection v1.3 - 16bit 48k/Cinematic Sounds/cinematic_deep_bass_rumble_01.wav"), preload("res://available-assets/sfx/prosoundcollection/Gamemaster Audio - Pro Sound Collection v1.3 - 16bit 48k/Cinematic Sounds/cinematic_deep_bass_rumble_02.wav")]
 const BUILDING_DEBRIS: Array[AudioStream] = [preload("res://available-assets/sfx/prosoundcollection/Gamemaster Audio - Pro Sound Collection v1.3 - 16bit 48k/Impacts_Smashable/rock_avalanche_landslide_debris_01.wav"), preload("res://available-assets/sfx/prosoundcollection/Gamemaster Audio - Pro Sound Collection v1.3 - 16bit 48k/Impacts_Smashable/rock_avalanche_landslide_debris_02.wav")]
 const BUILDING_GLASS: Array[AudioStream] = [preload("res://available-assets/sfx/prosoundcollection/Gamemaster Audio - Pro Sound Collection v1.3 - 16bit 48k/Impacts_Smashable/glass_smashable_debris_fall_01.wav"), preload("res://available-assets/sfx/prosoundcollection/Gamemaster Audio - Pro Sound Collection v1.3 - 16bit 48k/Impacts_Smashable/glass_smashable_debris_fall_02.wav"), preload("res://available-assets/sfx/prosoundcollection/Gamemaster Audio - Pro Sound Collection v1.3 - 16bit 48k/Impacts_Smashable/glass_smashable_debris_fall_03.wav")]
+const RUBBLE_ABSORB: Array[AudioStream] = [preload("res://available-assets/sfx/prosoundcollection/Gamemaster Audio - Pro Sound Collection v1.3 - 16bit 48k/Miscellaneous/Gravel Dirt Stones/dirt_rice_pouring_gravel_debris_01.wav"), preload("res://available-assets/sfx/prosoundcollection/Gamemaster Audio - Pro Sound Collection v1.3 - 16bit 48k/Miscellaneous/Gravel Dirt Stones/dirt_rice_pouring_gravel_debris_02.wav"), preload("res://available-assets/sfx/prosoundcollection/Gamemaster Audio - Pro Sound Collection v1.3 - 16bit 48k/Miscellaneous/Gravel Dirt Stones/dirt_rice_pouring_gravel_debris_03.wav"), preload("res://available-assets/sfx/prosoundcollection/Gamemaster Audio - Pro Sound Collection v1.3 - 16bit 48k/Impacts_Smashable/rock_smashable_falling_debris_02.wav")]
 const BUILDING_VOICES: int = 6
 const BUILDING_REFERENCE_HEIGHT: float = 40.0
+const RUBBLE_SOUND_INTERVAL_MSEC: int = 250
 
 var _voices: Array[AudioStreamPlayer3D] = []
 var _building_voices: Array[AudioStreamPlayer3D] = []
 var _player: Node3D
+var _last_rubble_sound_msec: int = -RUBBLE_SOUND_INTERVAL_MSEC
 
 func _ready() -> void:
 	for index: int in 12:
@@ -43,6 +46,14 @@ func play_depletion(style: int, location: Vector3, female: bool, building_collap
 				_play(RUBBLE, location, -14.0)
 		_:
 			pass
+
+func play_rubble_absorb(size: Vector3) -> void:
+	var now: int = Time.get_ticks_msec()
+	if now - _last_rubble_sound_msec < RUBBLE_SOUND_INTERVAL_MSEC:
+		return
+	_last_rubble_sound_msec = now
+	var weight: float = clampf(sqrt(maxf(size.y, 0.1) / BUILDING_REFERENCE_HEIGHT), 0.5, 1.0)
+	_play(RUBBLE_ABSORB, _player_position(), -11.0 + linear_to_db(weight))
 
 func _play(samples: Array[AudioStream], location: Vector3, volume: float) -> void:
 	for voice: AudioStreamPlayer3D in _voices:

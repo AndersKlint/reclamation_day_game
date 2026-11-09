@@ -47,11 +47,13 @@ var effective_acceleration: float:
 		return clampf(raw, 0.0, MAX_EFFECTIVE_ACCELERATION) if is_finite(raw) else acceleration
 var effective_drain_reach: float:
 	get:
-		var raw: float = (base_drain_reach + (size - 1.0) * DRAIN_REACH_PER_SIZE) * reach_multiplier
+		var growth: float = size * size * size
+		var raw: float = (base_drain_reach + (growth - 1.0) * DRAIN_REACH_PER_SIZE) * reach_multiplier
 		return clampf(raw, 0.0, MAX_EFFECTIVE_DRAIN_REACH) if is_finite(raw) else base_drain_reach
 var effective_drain_rate: float:
 	get:
-		var raw: float = base_drain_rate * (1.0 + (size - 1.0) * DRAIN_RATE_PER_SIZE) * rate_multiplier
+		var growth: float = size * size * size
+		var raw: float = base_drain_rate * (1.0 + (growth - 1.0) * DRAIN_RATE_PER_SIZE) * rate_multiplier
 		return clampf(raw, 0.0, MAX_EFFECTIVE_DRAIN_RATE) if is_finite(raw) else base_drain_rate
 @onready var camera: Camera3D = $CameraRig/SpringArm3D/Camera3D
 @onready var drain_area: Area3D = $DrainArea
@@ -65,6 +67,7 @@ var effective_drain_rate: float:
 
 func _ready() -> void:
 	body_shape.shape = body_shape.shape.duplicate()
+	add_to_group(&"player")
 	health = max_health
 	drain_area.life_absorbed.connect(gain_life)
 	drain_area.life_absorbed.connect(drain_audio.record_transfer)
@@ -118,7 +121,8 @@ func _calculate_size() -> float:
 	var safe_life: float = life if is_finite(life) else 0.0
 	var maximum: float = maximum_size if is_finite(maximum_size) and maximum_size >= 1.0 else 1.0
 	var per_size: float = life_per_size if is_finite(life_per_size) and life_per_size > 0.0 else 1.0
-	return clampf(1.0 + safe_life / per_size, 1.0, maximum)
+	# Life is volume, so the displayed size is the cube root of accumulated growth.
+	return clampf(pow(1.0 + maxf(0.0, safe_life / per_size), 1.0 / 3.0), 1.0, maximum)
 
 func _unhandled_input(event: InputEvent) -> void:
 	if not gameplay_enabled:
@@ -182,6 +186,9 @@ func _apply_growth_geometry() -> void:
 	capsule.radius = COMBAT_RADIUS_PER_SIZE * physical_size
 	capsule.height = COMBAT_HEIGHT_PER_SIZE * physical_size
 	body_shape.position.y = capsule.height * 0.5
+
+func get_collection_position() -> Vector3:
+	return collection_point.global_position
 
 func get_combat_radius() -> float:
 	return COMBAT_RADIUS_PER_SIZE * size

@@ -30,6 +30,7 @@ var _collapsed: bool = false
 func _ready() -> void:
 	drainable.emission_offset = Vector3(0.0, dimensions.y * 0.5, 0.0)
 	drainable.emission_radius = maxf(0.4, minf(dimensions.x, dimensions.z) * 0.5)
+	drainable.direct_life_share = 0.5 if target_label == "Barn" else 1.0
 	var model_scene: PackedScene = MEADOW_MODEL
 	if target_label == "Orchard":
 		model_scene = ORCHARD_MODEL
@@ -39,6 +40,7 @@ func _ready() -> void:
 	_collect_materials(visual)
 	_depletion_effect = DEPLETION_EFFECT.instantiate() as DepletionEffect
 	_depletion_effect.style = DepletionEffect.Style.RUBBLE if target_label == "Barn" else DepletionEffect.Style.WOODEN
+	_depletion_effect.building_collapse = target_label == "Barn"
 	add_child(_depletion_effect)
 	_depletion_effect.configure(visual, dimensions, ground_position)
 	_set_life_fraction(drainable.remaining_capacity / drainable.capacity)
@@ -68,9 +70,18 @@ func _on_depleted() -> void:
 func _start_depletion() -> void:
 	label.hide()
 	set_process(false)
-	if is_instance_valid(blocking_collision):
-		blocking_collision.set_deferred("disabled", true)
+	_depletion_effect.absorbed_life = drainable.absorbed_capacity
+	_depletion_effect.flattened.connect(_clear_collision, CONNECT_ONE_SHOT)
 	_depletion_effect.start()
+
+
+func _clear_collision() -> void:
+	if is_instance_valid(blocking_collision):
+		blocking_collision.set_deferred(&"disabled", true)
+	for node: Node in find_children("*", "CollisionShape3D", true, false):
+		var shape: CollisionShape3D = node as CollisionShape3D
+		if shape.get_parent() is StaticBody3D:
+			shape.set_deferred(&"disabled", true)
 
 func _on_drained(_amount: float) -> void:
 	if _renewing:

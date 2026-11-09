@@ -1,6 +1,7 @@
 extends Node3D
 
 const LivingTarget = preload("res://game/world/living_target.tscn")
+const Drainable = preload("res://game/draining/drainable.gd")
 const WorldModel = preload("res://game/world/world_model.gd")
 const COTTAGE_MODEL: PackedScene = preload("res://available-assets/retro3d-assets/Buildings/retro_house_pack/models/glb/house1.glb")
 const COTTAGE_TEXTURE: Texture2D = preload("res://available-assets/retro3d-assets/Buildings/retro_house_pack/textures/256x256/house1_tex1.png")
@@ -72,10 +73,13 @@ func _place_target(title: String, point: Vector2, capacity: float, required_size
 		target.blocking_collision = $BarnCollision/CollisionShape3D
 	var component: Area3D = target.get_node("Drainable")
 	component.capacity = capacity
-	component.required_size = required_size
+	component.required_size = Drainable.gate_to_size(required_size)
 	component.drained.connect(_on_target_drained)
 	initial_capacity += capacity
 	$Drainables.add_child(target)
+	var effect: Node = target.get_node_or_null("DepletionEffect")
+	if effect != null and effect.has_signal(&"life_absorbed"):
+		effect.connect(&"life_absorbed", _on_target_drained)
 
 func ground_position(world_point: Vector3) -> Vector3:
 	var local_point: Vector3 = to_local(world_point)

@@ -2,6 +2,7 @@ extends CharacterBody3D
 
 const DEPLETION_EFFECT: PackedScene = preload("res://game/draining/depletion_effect.tscn")
 const DEPLETION_SCRIPT = preload("res://game/draining/depletion_effect.gd")
+const Drainable = preload("res://game/draining/drainable.gd")
 const BODY_SIZE: Vector3 = Vector3(0.7, 1.8, 0.7)
 
 @export var ranged: bool = false
@@ -54,7 +55,7 @@ func configure_remains(remains_parent: Node3D, ground_position: Callable) -> voi
 func _ready() -> void:
 	drainable.capacity = life_capacity
 	drainable.remaining_capacity = life_capacity
-	drainable.required_size = required_size
+	drainable.required_size = Drainable.gate_to_size(required_size)
 	drainable.emission_offset = Vector3(0.0, 1.0, 0.0)
 	drainable.emission_radius = 0.4
 	drainable.depleted.connect(_on_depleted)

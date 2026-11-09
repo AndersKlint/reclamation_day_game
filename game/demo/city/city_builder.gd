@@ -3,6 +3,7 @@ extends RefCounted
 const Assets = preload("res://game/demo/city/city_assets.gd")
 const Layout = preload("res://game/demo/city/city_layout.gd")
 const Catalog = preload("res://game/demo/targets/demo_asset_catalog.gd")
+const Drainable = preload("res://game/draining/drainable.gd")
 
 const FOREST_TREES: Array[StringName] = [&"forest_tree1", &"forest_tree2", &"forest_tree3", &"forest_tree4"]
 
@@ -193,7 +194,7 @@ static func _place_model(
 ) -> Node3D:
 	var target: Node3D = Catalog.instantiate_model(kind, scene, texture, dimensions, capacity, wooden)
 	var drainable: Node = target.get_node("Drainable")
-	drainable.set("required_size", maxf(gate, 0.1))
+	drainable.set("required_size", Drainable.gate_to_size(maxf(gate, 0.1)))
 	target.set("blocking", blocking)
 	target.position = Vector3(p.x, float(region.ground_height(p.x, p.y)), p.y)
 	target.rotation.y = yaw

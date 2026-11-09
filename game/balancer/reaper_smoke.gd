@@ -2,9 +2,9 @@ extends Node3D
 
 const DRAW_SHADER: Shader = preload("res://game/balancer/reaper_fog.gdshader")
 const PROCESS_SHADER: Shader = preload("res://game/balancer/reaper_fog_particles.gdshader")
-const VEIL_AMOUNT: int = 110
+const VEIL_AMOUNT: int = 55
 const VEIL_LIFETIME: float = 4.8
-const POOL_AMOUNT: int = 170
+const POOL_AMOUNT: int = 85
 const POOL_LIFETIME: float = 9.0
 const DENSITY_CAPACITY: float = 3.0
 const MAX_SIZE_FACTOR: float = 8.0
@@ -15,7 +15,7 @@ const VEIL_SETTINGS: Dictionary[StringName, float] = {
 	&"spawn_height": 0.45,
 	&"spawn_height_jitter": 0.18,
 	&"rise_speed": 0.30,
-	&"outward_speed": 0.22,
+	&"outward_speed": 0.90,
 	&"sway": 0.06,
 	&"start_scale": 0.30,
 	&"end_scale": 0.55,
@@ -27,7 +27,7 @@ const POOL_SETTINGS: Dictionary[StringName, float] = {
 	&"spawn_height": 0.14,
 	&"spawn_height_jitter": 0.05,
 	&"rise_speed": 0.18,
-	&"outward_speed": 0.45,
+	&"outward_speed": 1.30,
 	&"sway": 0.12,
 	&"start_scale": 0.45,
 	&"end_scale": 0.90,
