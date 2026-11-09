@@ -31,6 +31,6 @@ func set_enabled(enabled: bool) -> void:
 func _process(delta: float) -> void:
 	_recent_transfer = maxf(0.0, _recent_transfer - delta)
 	_level = move_toward(_level, 1.0 if _enabled and _recent_transfer > 0.0 else 0.0, delta / 0.2)
-	volume_db = linear_to_db(maxf(_level, 0.0001)) - 18.0
+	volume_db = linear_to_db(maxf(_level, 0.0001)) - 24.0
 	if playing and _level <= 0.0:
 		stop()

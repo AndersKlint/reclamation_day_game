@@ -8,6 +8,7 @@ const COMBAT_RADIUS_PER_SIZE: float = 0.45
 const COMBAT_HEIGHT_PER_SIZE: float = 2.2
 const PHYSICAL_SIZE_LIMIT: float = 3.0
 const Scaling = preload("res://game/draining/drain_scaling.gd")
+const WorldModel = preload("res://game/world/world_model.gd")
 const MAX_EFFECTIVE_MOVEMENT_SPEED: float = 18.0
 const MAX_EFFECTIVE_ACCELERATION: float = 72.0
 const MAX_UPGRADE_MULTIPLIER: float = 1_000_000.0
@@ -36,6 +37,8 @@ var movement_multiplier: float = 1.0
 var reach_multiplier: float = 1.0
 var rate_multiplier: float = 1.0
 var _geometry_update_pending: bool = false
+var _absorption_bounds: AABB
+var _absorption_bounds_ready: bool = false
 var _bank: float = 0.0
 var effective_movement_speed: float:
 	get:
@@ -190,6 +193,15 @@ func _apply_growth_geometry() -> void:
 
 func get_collection_position() -> Vector3:
 	return collection_point.global_position
+
+func get_absorption_transform() -> Transform3D:
+	return visuals.global_transform
+
+func get_absorption_bounds() -> AABB:
+	if not _absorption_bounds_ready:
+		_absorption_bounds_ready = true
+		_absorption_bounds = WorldModel.bounds(visuals, true)
+	return _absorption_bounds
 
 func get_combat_radius() -> float:
 	return COMBAT_RADIUS_PER_SIZE * size

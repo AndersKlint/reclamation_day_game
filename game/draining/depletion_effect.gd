@@ -16,10 +16,32 @@ const MAGNET_MAX_ACCELERATION: float = 180.0
 const MAGNET_MAX_SPEED: float = 55.0
 const MAGNET_CONSUME_RADIUS: float = 0.6
 const MAGNET_SHRINK_DISTANCE: float = 1.4
-const MAGNET_MAX_LIFETIME: float = 30.0
+const MAGNET_MIN_SCALE: float = 0.18
+const MAGNET_CAPTURE_DISTANCE: float = 6.0
+const MAGNET_ORBIT_DECAY_SECONDS: float = 3.0
+const MAGNET_ORBIT_DAMPING: float = 2.2
+const MAGNET_RADIAL_DAMPING: float = 0.65
+const MAGNET_RECOVERY_SECONDS: float = 8.0
+const ABSORPTION_SEGMENT_SAMPLES: int = 8
 const AUTOMATIC_ABSORB_SECONDS: float = 1.0
 
 static var _animated_collapses: int = 0
+
+class AbsorptionCone:
+	var base_center: Vector3
+	var height: float
+	var base_radius: float
+	var top_radius: float
+
+	func contains(point: Vector3) -> bool:
+		var t: float = (point.y - base_center.y) / maxf(height, 0.0001)
+		if t < 0.0 or t > 1.0:
+			return false
+		var radius: float = lerpf(base_radius, top_radius, t)
+		var dx: float = point.x - base_center.x
+		var dz: float = point.z - base_center.z
+		return dx * dx + dz * dz <= radius * radius
+
 
 class MagnetPiece:
 	var batch: MultiMesh
@@ -30,6 +52,8 @@ class MagnetPiece:
 	var velocity: Vector3
 	var landing_y: float = 0.0
 	var age: float = 0.0
+	var pull_age: float = 0.0
+	var capture_age: float = -1.0
 	var delay: float = 0.0
 	var spin: float = 0.0
 	var life_share: float = 0.0
@@ -62,7 +86,7 @@ var _fallback_ground_height: float
 var _magnet_enabled: bool = false
 var _magnet_target: Node3D
 var _magnet_pieces: Array[MagnetPiece] = []
-var _magnet_elapsed: float = 0.0
+var _previous_magnet_target: Vector3 = Vector3.INF
 var _pending_life: float = 0.0
 var _absorb_sound_played: bool = false
 var _flattened: bool = false
@@ -142,7 +166,11 @@ func _start_automatic_transfer() -> void:
 
 
 func _process(delta: float) -> void:
-	if not is_instance_valid(_magnet_target) or not bool(_magnet_target.get("gameplay_enabled")):
+	if not is_instance_valid(_magnet_target):
+		queue_free()
+		return
+	if not bool(_magnet_target.get("gameplay_enabled")):
+		_previous_magnet_target = Vector3.INF
 		return
 	if _automatic_time_left > 0.0:
 		var elapsed: float = minf(delta, _automatic_time_left)
@@ -157,16 +185,33 @@ func _process(delta: float) -> void:
 	if _magnet_pieces.is_empty():
 		return
 	var step: float = minf(delta, 1.0 / 30.0)
-	_magnet_elapsed += delta
 	var target_global: Vector3 = _magnet_global_position()
 	var has_target: bool = target_global.is_finite()
 	var target: Vector3 = to_local(target_global) if has_target else Vector3.ZERO
+	var target_start: Vector3 = _previous_magnet_target if _previous_magnet_target.is_finite() else target
+	_previous_magnet_target = target if has_target else Vector3.INF
+	var target_velocity: Vector3 = Vector3.ZERO
+	if _magnet_target is CharacterBody3D:
+		target_velocity = global_basis.inverse() * (_magnet_target as CharacterBody3D).get_real_velocity()
+	var absorption_inverse: Transform3D = Transform3D.IDENTITY
+	var absorption_cone: AbsorptionCone = null
+	var has_absorption: bool = _magnet_target.has_method(&"get_absorption_bounds") and _magnet_target.has_method(&"get_absorption_transform")
+	if has_absorption:
+		var absorption_transform: Transform3D = _magnet_target.call(&"get_absorption_transform")
+		absorption_inverse = absorption_transform.affine_inverse()
+		var bounds: AABB = _magnet_target.call(&"get_absorption_bounds")
+		absorption_cone = AbsorptionCone.new()
+		absorption_cone.base_center = Vector3(bounds.get_center().x, bounds.position.y, bounds.get_center().z)
+		absorption_cone.height = bounds.size.y
+		absorption_cone.base_radius = maxf(bounds.size.x, bounds.size.z) * 0.5
+		absorption_cone.top_radius = absorption_cone.base_radius * 0.5
 	var alive: bool = false
 	for piece: MagnetPiece in _magnet_pieces:
 		if piece.consumed:
 			continue
 		alive = true
 		piece.age += step
+		var from: Vector3 = piece.position
 		if not piece.settled:
 			piece.velocity.y -= MAGNET_FALL_GRAVITY * step
 			piece.position += piece.velocity * step
@@ -176,42 +221,66 @@ func _process(delta: float) -> void:
 				piece.velocity = Vector3.ZERO
 				piece.settled = true
 			_write_magnet_piece(piece, 1.0)
-			continue
-		if not has_target or piece.age < piece.delay:
-			continue
-		if not _absorb_sound_played:
-			_absorb_sound_played = true
-			_play_absorb_sound()
-		var offset: Vector3 = target - piece.position
-		var distance: float = offset.length()
-		var direction: Vector3 = offset / maxf(distance, 0.0001)
-		var acceleration: float = minf(MAGNET_BASE_ACCELERATION + MAGNET_PULL / maxf(distance * distance, 0.04), MAGNET_MAX_ACCELERATION)
-		piece.velocity += direction * acceleration * step
-		if piece.velocity.length_squared() > MAGNET_MAX_SPEED * MAGNET_MAX_SPEED:
-			piece.velocity = piece.velocity.normalized() * MAGNET_MAX_SPEED
-		piece.position += piece.velocity * step
-		var remaining: Vector3 = target - piece.position
-		var remaining_length: float = remaining.length()
-		if distance <= MAGNET_CONSUME_RADIUS or remaining_length <= MAGNET_CONSUME_RADIUS or remaining.dot(piece.velocity) <= 0.0:
-			piece.consumed = true
-			_pending_life += piece.life_share
-			piece.batch.set_instance_transform(piece.slot, Transform3D(Basis.from_scale(Vector3.ZERO), piece.position))
-			continue
-		piece.basis = piece.basis.rotated(Vector3.UP, piece.spin * step)
-		var shrink: float = clampf((remaining_length - MAGNET_CONSUME_RADIUS) / MAGNET_SHRINK_DISTANCE, 0.0, 1.0)
-		_write_magnet_piece(piece, shrink)
+		elif has_target and piece.age >= piece.delay:
+			_advance_magnet_piece(piece, target_start, target, target_velocity, step)
+		if has_absorption:
+			_absorb_if_touching(piece, from, piece.position, absorption_inverse, absorption_cone)
 	if _pending_life > 0.0:
 		_flush_absorbed_life()
-	if not alive:
+	if not alive and _flattened:
 		_pending_life += _remaining_life
 		_flush_absorbed_life()
 		_magnet_pieces.clear()
 		queue_free()
-	elif _magnet_elapsed > MAGNET_MAX_LIFETIME:
-		for piece: MagnetPiece in _magnet_pieces:
-			piece.batch.visible_instance_count = 0
-		_magnet_pieces.clear()
-		_start_automatic_transfer()
+
+
+func _advance_magnet_piece(piece: MagnetPiece, target_start: Vector3, target: Vector3, target_velocity: Vector3, step: float) -> void:
+	piece.pull_age += step
+	var relative_start: Vector3 = piece.position - target_start
+	var distance: float = relative_start.length()
+	var direction: Vector3 = -relative_start / maxf(distance, 0.0001)
+	if piece.capture_age >= 0.0:
+		piece.capture_age += step
+	elif distance <= MAGNET_CAPTURE_DISTANCE:
+		piece.capture_age = 0.0
+	var recovery: float = smoothstep(MAGNET_RECOVERY_SECONDS, MAGNET_RECOVERY_SECONDS * 2.0, piece.pull_age)
+	var convergence: float = maxf(smoothstep(0.0, MAGNET_ORBIT_DECAY_SECONDS, piece.capture_age), recovery)
+	var drag_strength: float = lerpf(0.05, 1.0, convergence)
+	var relative_velocity: Vector3 = piece.velocity - target_velocity
+	var radial_velocity: Vector3 = direction * relative_velocity.dot(direction)
+	var tangential_velocity: Vector3 = relative_velocity - radial_velocity
+	relative_velocity = radial_velocity * exp(-MAGNET_RADIAL_DAMPING * drag_strength * step) + tangential_velocity * exp(-MAGNET_ORBIT_DAMPING * drag_strength * step)
+	var acceleration: float = minf(MAGNET_BASE_ACCELERATION + MAGNET_PULL / maxf(distance * distance, 0.04), MAGNET_MAX_ACCELERATION)
+	acceleration *= lerpf(1.0, 2.0, recovery)
+	piece.velocity = (target_velocity + relative_velocity + direction * acceleration * step).limit_length(MAGNET_MAX_SPEED)
+	piece.position += piece.velocity * step
+	var relative_end: Vector3 = piece.position - target
+	var closest: Vector3 = Geometry3D.get_closest_point_to_segment(Vector3.ZERO, relative_start, relative_end)
+	if piece.capture_age < 0.0 and closest.length_squared() <= MAGNET_CAPTURE_DISTANCE * MAGNET_CAPTURE_DISTANCE:
+		piece.capture_age = 0.0
+	piece.basis = piece.basis.rotated(Vector3.UP, piece.spin * step)
+	var shrink: float = clampf((relative_end.length() - MAGNET_CONSUME_RADIUS) / MAGNET_SHRINK_DISTANCE, MAGNET_MIN_SCALE, 1.0)
+	_write_magnet_piece(piece, shrink)
+
+
+func _absorb_if_touching(piece: MagnetPiece, from: Vector3, to: Vector3, absorption_inverse: Transform3D, cone: AbsorptionCone) -> void:
+	var local_from: Vector3 = absorption_inverse * to_global(from)
+	var local_to: Vector3 = absorption_inverse * to_global(to)
+	if not _segment_hits_cone(local_from, local_to, cone):
+		return
+	piece.consumed = true
+	_pending_life += piece.life_share
+	piece.batch.set_instance_transform(piece.slot, Transform3D(Basis.from_scale(Vector3.ZERO), piece.position))
+	if not _absorb_sound_played:
+		_absorb_sound_played = true
+		_play_absorb_sound()
+
+
+func _segment_hits_cone(from: Vector3, to: Vector3, cone: AbsorptionCone) -> bool:
+	for sample: int in ABSORPTION_SEGMENT_SAMPLES + 1:
+		if cone.contains(from.lerp(to, float(sample) / float(ABSORPTION_SEGMENT_SAMPLES))):
+			return true
+	return false
 
 
 func _flush_absorbed_life() -> void:
