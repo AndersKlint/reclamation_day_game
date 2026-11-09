@@ -16,13 +16,11 @@ var _label: Label3D
 var _active_time: float = 0.0
 var _renewing: bool = false
 var _renewal: Tween
+var _label_player: Node3D
 
-func configure_drain(capacity: float, required_size: float) -> void:
+func configure_drain() -> void:
 	drainable = Drainable.new()
 	drainable.name = "Drainable"
-	drainable.capacity = maxf(0.1, capacity)
-	drainable.required_size = Drainable.gate_to_size(required_size)
-	drainable.direct_life_share = 0.5 if depletion_style == DepletionEffect.Style.RUBBLE else 1.0
 	drainable.collision_layer = 8
 	drainable.collision_mask = 0
 	drainable.monitoring = false
@@ -36,6 +34,7 @@ func _ready() -> void:
 	super()
 	if visual == null:
 		return
+	drainable.configure_volume(fitted_size * global_basis.get_scale().abs())
 	var collision: CollisionShape3D = drainable.get_node("CollisionShape3D") as CollisionShape3D
 	var box: BoxShape3D = collision.shape as BoxShape3D
 	box.size = fitted_size + Vector3(0.3, 0.1, 0.3)
@@ -48,7 +47,7 @@ func _ready() -> void:
 	_depletion_effect.style = depletion_style
 	add_child(_depletion_effect)
 	_depletion_effect.configure(visual, fitted_size, ground_position)
-	drainable.depleted.connect(_on_depleted)
+	drainable.collapsed.connect(_on_collapsed)
 	_label = Label3D.new()
 	_label.name = "Label3D"
 	_label.billboard = BaseMaterial3D.BILLBOARD_ENABLED
@@ -69,7 +68,9 @@ func _process(delta: float) -> void:
 		var bounds: AABB = AABB(Vector3(-fitted_size.x * 0.5, 0.0, -fitted_size.z * 0.5), fitted_size)
 		var nearest: Vector3 = camera_local.clamp(bounds.position, bounds.end)
 		close = camera_local.distance_to(nearest) < 7.0
-	_label.visible = not _renewing and not _collapsed and (_active_time > 0.0 or (close and not drainable.is_depleted))
+	_label.visible = not _renewing and not _collapsed and (_active_time > 0.0 or (close and not drainable.is_collapsed))
+	if _label.visible:
+		_update_label()
 
 func _collect_materials() -> void:
 	var shared: Dictionary[Material, ShaderMaterial] = {}
@@ -95,16 +96,19 @@ func _on_drained(_amount: float) -> void:
 	if _renewing:
 		return
 	_active_time = 0.45
-	var wither: float = 1.0 - drainable.remaining_capacity / drainable.capacity
+	var wither: float = 1.0 - drainable.drain_fraction()
 	for material: ShaderMaterial in _materials:
 		material.set_shader_parameter("wither_amount", wither)
 	_update_label()
 
 func _update_label() -> void:
 	var title: String = "House" if String(kind).begins_with("house") else String(kind).trim_prefix("city_").replace("_alt", "").capitalize()
-	_label.text = "%s · size %.1f%s" % [title, drainable.required_size, " · spent" if drainable.is_depleted else ""]
+	if not is_instance_valid(_label_player):
+		_label_player = get_tree().get_first_node_in_group(&"player") as Node3D
+	var too_large: bool = is_instance_valid(_label_player) and not drainable.can_drain(float(_label_player.get("volume")))
+	_label.text = "%s · needs %.2f m³%s" % [title, drainable.required_volume, " · too large" if too_large else ""]
 
-func _on_depleted() -> void:
+func _on_collapsed() -> void:
 	_collapsed = true
 	_start_depletion.call_deferred()
 
@@ -113,7 +117,7 @@ func _start_depletion() -> void:
 	set_process(false)
 	for light: Node in visual.find_children("*", "Light3D", true, false):
 		(light as Light3D).visible = false
-	_depletion_effect.absorbed_life = drainable.absorbed_capacity
+	_depletion_effect.configure_reward(drainable.take_collapse_life(), drainable.collector)
 	_depletion_effect.flattened.connect(_clear_collision, CONNECT_ONE_SHOT)
 	_depletion_effect.building_collapse = building_collapse
 	_depletion_effect.start()
@@ -126,7 +130,7 @@ func _clear_collision() -> void:
 			shape.set_deferred(&"disabled", true)
 
 func renew(duration: float) -> void:
-	if _collapsed or drainable.is_depleted:
+	if _collapsed or drainable.is_collapsed:
 		return
 	_renewing = true
 	_active_time = 0.0

@@ -4,7 +4,8 @@ const Drainable = preload("res://game/draining/drainable.gd")
 signal life_absorbed(amount: float)
 signal transfer_effect_requested(source_id: int, source_position: Vector3, source_radius: float, actual_rate: float, proximity: float)
 
-var source_size: float = 1.0
+var source_volume: float = 0.0
+var collector: Node3D
 var drain_rate: float = 8.0
 var enabled: bool = true
 var _reach: float = 2.8
@@ -22,9 +23,9 @@ func _physics_process(delta: float) -> void:
 	var eligible: Array[Drainable] = []
 	for index: int in range(_targets.size() - 1, -1, -1):
 		var target: Drainable = _targets[index]
-		if not is_instance_valid(target) or target.is_queued_for_deletion() or target.is_depleted:
+		if not is_instance_valid(target) or target.is_queued_for_deletion() or target.is_collapsed:
 			_targets.remove_at(index)
-		elif target.required_size <= source_size or is_equal_approx(target.required_size, source_size):
+		elif target.can_drain(source_volume):
 			eligible.append(target)
 	if eligible.is_empty():
 		return
@@ -41,7 +42,7 @@ func _physics_process(delta: float) -> void:
 			offset.y = 0.0
 			var surface_distance: float = maxf(0.0, offset.length() - source_radius)
 			var proximity: float = 1.0 - clampf(surface_distance / maxf(_reach, 0.001), 0.0, 1.0)
-			var amount: float = target.drain(request, source_size)
+			var amount: float = target.drain(request, source_volume, collector)
 			absorbed += amount
 			if amount > 0.0:
 				transfer_effect_requested.emit(source_id, source_position, source_radius, amount / delta, proximity)

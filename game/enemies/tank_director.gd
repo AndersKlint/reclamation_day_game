@@ -224,7 +224,7 @@ func _has_heavy() -> bool:
 
 func _tank_depleted(tank: CharacterBody3D) -> bool:
 	var drainable: Area3D = tank.get(&"drainable") as Area3D
-	return is_instance_valid(drainable) and bool(drainable.get(&"is_depleted"))
+	return is_instance_valid(drainable) and bool(drainable.get(&"is_collapsed"))
 
 func _retire_tank(tank: CharacterBody3D) -> void:
 	if not is_instance_valid(tank) or tank.is_queued_for_deletion():

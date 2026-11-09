@@ -43,8 +43,6 @@ ground_scorch = NodePath("../GroundScorch")
 
 [node name="Balancer" parent="." instance=ExtResource("3")]
 process_mode = 1
-base_drain_rate = 3.0
-life_per_size = 500.0
 maximum_size = 1000.0
 
 [node name="CameraRig" parent="Balancer" index="6"]
@@ -58,7 +56,7 @@ process_mode = 1
 
 [node name="UpgradeTracker" type="Node" parent="."]
 script = ExtResource("5")
-thresholds = PackedFloat32Array(100, 300, 650, 1100, 1800, 2700)
+growth_volume_thresholds = PackedFloat32Array(6, 18, 39, 66, 108, 162)
 
 [node name="Interface" parent="." instance=ExtResource("6")]
 process_mode = 3

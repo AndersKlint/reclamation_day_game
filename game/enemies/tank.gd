@@ -4,6 +4,7 @@ const TankAssets = preload("res://game/enemies/tank_assets.gd")
 const DEPLETION_EFFECT: PackedScene = preload("res://game/draining/depletion_effect.tscn")
 const DEPLETION_SCRIPT = preload("res://game/draining/depletion_effect.gd")
 const Drainable = preload("res://game/draining/drainable.gd")
+const WorldModel = preload("res://game/world/world_model.gd")
 const CANNON_SOUNDS: Array[AudioStream] = [
 	preload("res://available-assets/sfx/prosoundcollection/Gamemaster Audio - Pro Sound Collection v1.3 - 16bit 48k/Guns_Weapons/Guns/gun_tank_cannon_turret_shot_01.wav"),
 	preload("res://available-assets/sfx/prosoundcollection/Gamemaster Audio - Pro Sound Collection v1.3 - 16bit 48k/Guns_Weapons/Guns/gun_tank_cannon_turret_shot_02.wav"),
@@ -33,8 +34,6 @@ enum State { PATROL, WINDUP }
 @export var windup: float = 2.0
 @export var cooldown: float = 6.5
 @export var impact_radius: float = 4.5
-@export var life_capacity: float = 300.0
-@export var required_size: float = 6.0
 
 var state: State = State.PATROL
 var _player: CharacterBody3D
@@ -101,17 +100,11 @@ func _apply_variant() -> void:
 	windup = 2.2
 	cooldown = 7.5
 	impact_radius = 6.0
-	life_capacity = 650.0
-	required_size = 12.0
 
 func _ready() -> void:
-	drainable.capacity = life_capacity
-	drainable.remaining_capacity = life_capacity
-	drainable.required_size = Drainable.gate_to_size(required_size)
-	drainable.direct_life_share = 0.5
 	drainable.emission_offset = Vector3(0.0, 1.4, 0.0)
 	drainable.emission_radius = 1.6
-	drainable.depleted.connect(_on_depleted)
+	drainable.collapsed.connect(_on_collapsed)
 	var drain_shape: SphereShape3D = SphereShape3D.new()
 	drain_shape.radius = 2.4
 	($Drainable/CollisionShape3D as CollisionShape3D).shape = drain_shape
@@ -129,6 +122,7 @@ func _ready() -> void:
 	disc.bottom_radius = impact_radius
 	_warning.mesh = disc
 	TankAssets.build(_visual, _heavy)
+	drainable.configure_volume(WorldModel.bounds(_visual).size * global_basis.get_scale().abs())
 
 func _notification(what: int) -> void:
 	if what == NOTIFICATION_PAUSED:
@@ -328,7 +322,7 @@ func _ground_point(point: Vector3) -> Vector3:
 func _flat(value: Vector3) -> Vector3:
 	return Vector3(value.x, 0.0, value.z)
 
-func _on_depleted() -> void:
+func _on_collapsed() -> void:
 	if _depleted:
 		return
 	_depleted = true
@@ -347,7 +341,7 @@ func _create_wreck() -> void:
 		parent.add_child(effect)
 		effect.global_transform = Transform3D(Basis.IDENTITY, global_position)
 		effect.style = DEPLETION_SCRIPT.Style.RUBBLE
-		effect.absorbed_life = drainable.absorbed_capacity
+		effect.configure_reward(drainable.take_collapse_life(), drainable.collector)
 		_visual.reparent(effect, true)
 		effect.configure(_visual, TankAssets.size_for(_heavy), _ground_position)
 		effect.start()

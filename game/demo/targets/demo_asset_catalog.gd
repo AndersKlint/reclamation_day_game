@@ -7,7 +7,7 @@ const CityAssets = preload("res://game/demo/city/city_assets.gd")
 const ROOT: String = "res://available-assets/retro3d-assets/"
 const Forest = preload("res://game/demo/world/forest_assets.gd")
 
-static func instantiate_target(kind: StringName, dimensions: Vector3, capacity: float, required_size: float) -> Node3D:
+static func instantiate_target(kind: StringName, dimensions: Vector3) -> Node3D:
 	var wrapper: Target = Target.new()
 	_configure(wrapper, kind, dimensions)
 	wrapper.building_collapse = CityAssets.has_building(kind) or kind in [&"house1", &"house2", &"house3", &"house4", &"house5", &"shed"]
@@ -18,7 +18,7 @@ static func instantiate_target(kind: StringName, dimensions: Vector3, capacity: 
 			wrapper.depletion_style = DepletionEffect.Style.RUBBLE
 	if String(kind).contains("tree"):
 		wrapper.blocking = true
-	wrapper.configure_drain(capacity, required_size)
+	wrapper.configure_drain()
 	return wrapper
 
 static func instantiate_scenery(kind: StringName, dimensions: Vector3) -> Node3D:
@@ -26,7 +26,7 @@ static func instantiate_scenery(kind: StringName, dimensions: Vector3) -> Node3D
 	_configure(wrapper, kind, dimensions)
 	return wrapper
 
-static func instantiate_model(kind: StringName, scene: PackedScene, texture: Texture2D, dimensions: Vector3, capacity: float, wooden: bool) -> Node3D:
+static func instantiate_model(kind: StringName, scene: PackedScene, texture: Texture2D, dimensions: Vector3, wooden: bool) -> Node3D:
 	var wrapper: Target = Target.new()
 	wrapper.name = String(kind).to_pascal_case()
 	wrapper.kind = kind
@@ -34,7 +34,7 @@ static func instantiate_model(kind: StringName, scene: PackedScene, texture: Tex
 	wrapper.texture = texture
 	wrapper.dimensions = dimensions
 	wrapper.depletion_style = DepletionEffect.Style.WOODEN if wooden else DepletionEffect.Style.RUBBLE
-	wrapper.configure_drain(capacity, 1.0)
+	wrapper.configure_drain()
 	return wrapper
 
 static func _configure(wrapper: Scenery, kind: StringName, dimensions: Vector3) -> void:

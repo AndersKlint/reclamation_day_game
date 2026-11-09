@@ -1,7 +1,6 @@
 extends Node3D
 
 const LivingTarget = preload("res://game/world/living_target.tscn")
-const Drainable = preload("res://game/draining/drainable.gd")
 const WorldModel = preload("res://game/world/world_model.gd")
 const COTTAGE_MODEL: PackedScene = preload("res://available-assets/retro3d-assets/Buildings/retro_house_pack/models/glb/house1.glb")
 const COTTAGE_TEXTURE: Texture2D = preload("res://available-assets/retro3d-assets/Buildings/retro_house_pack/textures/256x256/house1_tex1.png")
@@ -55,13 +54,13 @@ func _ready() -> void:
 func _place_targets() -> void:
 	var meadow_positions: Array[Vector2] = [Vector2(-4, 22), Vector2(4, 18), Vector2(-7, 14), Vector2(7, 10), Vector2(-10, 6), Vector2(10, 2), Vector2(-6, -2), Vector2(6, -6), Vector2(-13, 23), Vector2(13, 25), Vector2(-17, 9), Vector2(17, 13)]
 	for point: Vector2 in meadow_positions:
-		_place_target("Meadow", point, 20.0, 1.0, Vector3(2.4, 0.8, 2.4), Color("83915b"))
+		_place_target("Meadow", point, Vector3(2.4, 0.8, 2.4), Color("83915b"))
 	var orchard_positions: Array[Vector2] = [Vector2(-18, -18), Vector2(-25, -12), Vector2(-32, -19), Vector2(-16, -29), Vector2(15, -17), Vector2(30, -14), Vector2(31, -29), Vector2(15, -32)]
 	for point: Vector2 in orchard_positions:
-		_place_target("Orchard", point, 45.0, 1.8, Vector3(2.5, 4.5, 2.5), Color("5e7754"))
-	_place_target("Barn", Vector2(22, -23), 240.0, 3.0, Vector3(10.2, 6.3, 8.2), Color("826455"))
+		_place_target("Orchard", point, Vector3(2.5, 4.5, 2.5), Color("5e7754"))
+	_place_target("Barn", Vector2(22, -23), Vector3(10.2, 6.3, 8.2), Color("826455"))
 
-func _place_target(title: String, point: Vector2, capacity: float, required_size: float, dimensions: Vector3, color: Color) -> void:
+func _place_target(title: String, point: Vector2, dimensions: Vector3, color: Color) -> void:
 	var target: Node3D = LivingTarget.instantiate()
 	target.name = title + str($Drainables.get_child_count() + 1)
 	target.position = Vector3(point.x, 0.0, point.y)
@@ -72,11 +71,9 @@ func _place_target(title: String, point: Vector2, capacity: float, required_size
 	if title == "Barn":
 		target.blocking_collision = $BarnCollision/CollisionShape3D
 	var component: Area3D = target.get_node("Drainable")
-	component.capacity = capacity
-	component.required_size = Drainable.gate_to_size(required_size)
 	component.drained.connect(_on_target_drained)
-	initial_capacity += capacity
 	$Drainables.add_child(target)
+	initial_capacity += float(component.get("capacity"))
 	var effect: Node = target.get_node_or_null("DepletionEffect")
 	if effect != null and effect.has_signal(&"life_absorbed"):
 		effect.connect(&"life_absorbed", _on_target_drained)

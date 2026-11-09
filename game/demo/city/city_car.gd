@@ -2,8 +2,6 @@ extends "res://game/demo/targets/demo_target.gd"
 
 const CarAssets = preload("res://game/demo/city/car_assets.gd")
 
-const LIFE_CAPACITY: float = 120.0
-const REQUIRED_SIZE: float = 3.0
 const FIT_BOUNDS: Vector3 = Vector3(6.0, 6.0, 4.6)
 
 const WORLD_LAYER: int = 1
@@ -50,7 +48,7 @@ func configure_car(variant: int, route: PackedVector3Array = PackedVector3Array(
 	dimensions = FIT_BOUNDS
 	model_yaw = PI
 	blocking = _route.size() < 2
-	configure_drain(LIFE_CAPACITY, REQUIRED_SIZE)
+	configure_drain()
 
 func configure_traffic(player: CharacterBody3D) -> void:
 	_player = player
@@ -76,7 +74,7 @@ func _ready() -> void:
 	_priority = get_instance_id()
 	_yield_delay = 0.3 + float(_priority % 5) * 0.12
 	_configure_body()
-	drainable.depleted.connect(_on_car_depleted)
+	drainable.collapsed.connect(_on_car_depleted)
 	var start_active: bool = _route.size() >= 2 and _active_requested
 	_motion = Motion.CRUISE if start_active else Motion.PARKED
 	set_physics_process(start_active)
@@ -265,7 +263,7 @@ func _on_car_depleted() -> void:
 	set_physics_process(false)
 
 func _is_depleted() -> bool:
-	return drainable != null and drainable.is_depleted
+	return drainable != null and drainable.is_collapsed
 
 func _flat_distance(a: Vector3, b: Vector3) -> float:
 	return Vector2(a.x - b.x, a.z - b.z).length()

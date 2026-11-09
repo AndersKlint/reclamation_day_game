@@ -30,20 +30,20 @@ var _collapsed: bool = false
 func _ready() -> void:
 	drainable.emission_offset = Vector3(0.0, dimensions.y * 0.5, 0.0)
 	drainable.emission_radius = maxf(0.4, minf(dimensions.x, dimensions.z) * 0.5)
-	drainable.direct_life_share = 0.5 if target_label == "Barn" else 1.0
 	var model_scene: PackedScene = MEADOW_MODEL
 	if target_label == "Orchard":
 		model_scene = ORCHARD_MODEL
 	elif target_label == "Barn":
 		model_scene = BARN_MODEL
 	_add_model(model_scene, visual, dimensions)
+	drainable.configure_volume(WorldModel.bounds(visual).size * global_basis.get_scale().abs())
 	_collect_materials(visual)
 	_depletion_effect = DEPLETION_EFFECT.instantiate() as DepletionEffect
 	_depletion_effect.style = DepletionEffect.Style.RUBBLE if target_label == "Barn" else DepletionEffect.Style.WOODEN
 	_depletion_effect.building_collapse = target_label == "Barn"
 	add_child(_depletion_effect)
 	_depletion_effect.configure(visual, dimensions, ground_position)
-	_set_life_fraction(drainable.remaining_capacity / drainable.capacity)
+	_set_life_fraction(drainable.drain_fraction())
 	if target_label == "Barn":
 		_new_growth = Node3D.new()
 		_new_growth.name = "RenewalGrowth"
@@ -60,17 +60,17 @@ func _ready() -> void:
 	$Drainable/CollisionShape3D.shape = shape
 	label.position.y = dimensions.y + 1.0
 	drainable.drained.connect(_on_drained)
-	drainable.depleted.connect(_on_depleted)
+	drainable.collapsed.connect(_on_collapsed)
 	_update_label()
 
-func _on_depleted() -> void:
+func _on_collapsed() -> void:
 	_collapsed = true
 	_start_depletion.call_deferred()
 
 func _start_depletion() -> void:
 	label.hide()
 	set_process(false)
-	_depletion_effect.absorbed_life = drainable.absorbed_capacity
+	_depletion_effect.configure_reward(drainable.take_collapse_life(), drainable.collector)
 	_depletion_effect.flattened.connect(_clear_collision, CONNECT_ONE_SHOT)
 	_depletion_effect.start()
 
@@ -86,12 +86,12 @@ func _clear_collision() -> void:
 func _on_drained(_amount: float) -> void:
 	if _renewing:
 		return
-	var fraction: float = drainable.remaining_capacity / drainable.capacity
+	var fraction: float = drainable.drain_fraction()
 	_set_life_fraction(fraction)
 	_update_label()
 
 func renew(duration: float) -> void:
-	if _collapsed or drainable.is_depleted:
+	if _collapsed or drainable.is_collapsed:
 		return
 	_renewing = true
 	if _renewal != null:
@@ -143,8 +143,8 @@ func _add_model(scene: PackedScene, parent: Node3D, size: Vector3) -> void:
 		WorldModel.bind_texture(model, ORCHARD_TEXTURE if scene == ORCHARD_MODEL else MEADOW_TEXTURE, true)
 
 func _update_label() -> void:
-	if drainable.is_depleted:
+	if drainable.is_collapsed:
 		label.text = target_label + " · spent"
 		label.modulate = Color(0.55, 0.55, 0.55)
 	else:
-		label.text = "%s · size %.1f\n%.0f / %.0f" % [target_label, drainable.required_size, drainable.remaining_capacity, drainable.capacity]
+		label.text = "%s · needs %.2f m³\n%.2f / %.2f life" % [target_label, drainable.required_volume, drainable.remaining_capacity, drainable.capacity]

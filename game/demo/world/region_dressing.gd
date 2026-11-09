@@ -66,11 +66,11 @@ static func _prop(region: Node3D, parent: Node3D, scene: PackedScene, texture: T
 	if region._on_road(p, 1.5):
 		return
 	wooden = wooden or scene == CRATE or scene == BARREL
-	var anchor: Node3D = Catalog.instantiate_model(&"yard_prop", scene, texture, dimensions, 1.5, wooden)
+	var anchor: Node3D = Catalog.instantiate_model(&"yard_prop", scene, texture, dimensions, wooden)
 	anchor.position = Vector3(p.x, region.ground_height(p.x, p.y) + elevation, p.y)
 	anchor.rotation.y = yaw
 	anchor.ground_position = region.ground_position
-	region._register_target(anchor, 1.5)
+	region._register_target(anchor)
 
 static func _lamp(region: Node3D, parent: Node3D, p: Vector2) -> void:
 	var lamp: Node3D = Node3D.new()
@@ -103,11 +103,11 @@ static func _lamp(region: Node3D, parent: Node3D, p: Vector2) -> void:
 	var scene: PackedScene = PackedScene.new()
 	scene.pack(lamp)
 	lamp.free()
-	var target: Node3D = Catalog.instantiate_model(&"lamp", scene, null, Vector3(0.65, 4.6, 0.65), 3.0, false)
+	var target: Node3D = Catalog.instantiate_model(&"lamp", scene, null, Vector3(0.65, 4.6, 0.65), false)
 	target.preserve_model_lights = true
 	target.position = Vector3(p.x, region.ground_height(p.x, p.y), p.y)
 	target.ground_position = region.ground_position
-	region._register_target(target, 3.0)
+	region._register_target(target)
 
 static func _part(parent: Node3D, position: Vector3, dimensions: Vector3, material: Material) -> void:
 	var instance: MeshInstance3D = MeshInstance3D.new()

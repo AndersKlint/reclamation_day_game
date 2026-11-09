@@ -25,8 +25,6 @@ const HumanScene: PackedScene = preload("res://game/humans/human.tscn")
 @export var ranged_windup: float = 1.4
 @export var ranged_cooldown: float = 3.8
 @export var ranged_impact_radius: float = 1.8
-@export var ranged_capacity: float = 22.0
-@export var ranged_required_size: float = 1.8
 @export_group("City")
 @export var city_population: int = 12
 @export_range(0.0, 1.0) var city_ranged_fraction: float = 0.85
@@ -36,7 +34,6 @@ const HumanScene: PackedScene = preload("res://game/humans/human.tscn")
 @export var city_windup: float = 1.5
 @export var city_cooldown: float = 3.2
 @export var city_impact_radius: float = 2.0
-@export var city_capacity: float = 26.0
 @export_group("Downtown")
 @export var downtown_population: int = 16
 @export_range(0.0, 1.0) var downtown_ranged_fraction: float = 1.0
@@ -46,7 +43,6 @@ const HumanScene: PackedScene = preload("res://game/humans/human.tscn")
 @export var downtown_windup: float = 1.7
 @export var downtown_cooldown: float = 2.8
 @export var downtown_impact_radius: float = 2.2
-@export var downtown_capacity: float = 32.0
 
 var active: bool = false
 var tier: int = 0
@@ -106,7 +102,7 @@ func stop() -> void:
 	for human: CharacterBody3D in _humans:
 		if is_instance_valid(human):
 			human.stop()
-			if not human.drainable.is_depleted:
+			if not human.drainable.is_collapsed:
 				human.queue_free()
 	_humans.clear()
 
@@ -248,7 +244,6 @@ func _spawn_human() -> void:
 
 func _configure_ranged(human: CharacterBody3D) -> void:
 	human.ranged = true
-	human.required_size = ranged_required_size
 	match tier:
 		3:
 			human.movement_speed = city_speed
@@ -257,7 +252,6 @@ func _configure_ranged(human: CharacterBody3D) -> void:
 			human.windup = city_windup
 			human.cooldown = city_cooldown
 			human.impact_radius = city_impact_radius
-			human.life_capacity = city_capacity
 		4:
 			human.movement_speed = downtown_speed
 			human.attack_range = downtown_range
@@ -265,7 +259,6 @@ func _configure_ranged(human: CharacterBody3D) -> void:
 			human.windup = downtown_windup
 			human.cooldown = downtown_cooldown
 			human.impact_radius = downtown_impact_radius
-			human.life_capacity = downtown_capacity
 		_:
 			human.movement_speed = ranged_speed
 			human.attack_range = ranged_range
@@ -273,7 +266,6 @@ func _configure_ranged(human: CharacterBody3D) -> void:
 			human.windup = ranged_windup
 			human.cooldown = ranged_cooldown
 			human.impact_radius = ranged_impact_radius
-			human.life_capacity = ranged_capacity
 
 func _spawn_clear_of_player(position: Vector3) -> bool:
 	if not is_instance_valid(_balancer):

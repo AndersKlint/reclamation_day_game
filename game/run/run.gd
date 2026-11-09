@@ -58,6 +58,7 @@ func _ready() -> void:
 	if regional_encounters:
 		human_director.configure_region(region)
 	_configure_city_managers()
+	upgrades.configure(balancer.base_volume)
 	_on_health_changed(balancer.health, balancer.max_health)
 	_on_growth_changed(balancer.life, balancer.size)
 	_on_progress_changed(region.drained_capacity, region.initial_capacity)
@@ -123,7 +124,7 @@ func _on_health_changed(current: float, maximum: float) -> void:
 
 func _on_growth_changed(life: float, size: float) -> void:
 	upgrades.record_life(life)
-	interface.update_growth(life, size, upgrades.next_threshold, upgrades.earned_tiers)
+	interface.update_growth(life, size, upgrades.next_threshold, upgrades.earned_tiers, balancer.volume)
 	_queue_resolution()
 
 func _on_progress_changed(drained: float, initial: float) -> void:
@@ -186,7 +187,7 @@ func _on_upgrade_batch_selected(definition: UpgradeDefinition) -> void:
 	_queue_resolution()
 
 func _refresh_growth_display() -> void:
-	interface.update_growth(balancer.life, balancer.size, upgrades.next_threshold, upgrades.earned_tiers)
+	interface.update_growth(balancer.life, balancer.size, upgrades.next_threshold, upgrades.earned_tiers, balancer.volume)
 
 func _on_pause_requested() -> void:
 	if state != State.RUNNING:

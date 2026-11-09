@@ -263,20 +263,20 @@ func _ribbon(points: Array[Vector2], half_width: float, material: Material, labe
 	instance.material_override = material
 	_landscape.add_child(instance)
 
-func _place_target(kind: StringName, location: Vector3, dimensions: Vector3, capacity: float, gate: float, yaw: float = 0.0) -> Node3D:
-	var target: Node3D = Catalog.instantiate_target(kind, dimensions, capacity, gate)
+func _place_target(kind: StringName, location: Vector3, dimensions: Vector3, yaw: float = 0.0) -> Node3D:
+	var target: Node3D = Catalog.instantiate_target(kind, dimensions)
 	target.ground_position = ground_position
 	target.position = Vector3(location.x, ground_height(location.x, location.z), location.z)
 	target.rotation.y = yaw
 	target.set_meta(&"zone", get_zone_at(to_global(target.position)))
-	_register_target(target, capacity)
+	_register_target(target)
 	return target
 
-func _register_target(target: Node3D, capacity: float) -> void:
+func _register_target(target: Node3D) -> void:
 	target.get_node("Drainable").drained.connect(_on_drained)
-	initial_capacity += capacity
 	_targets.append(target)
 	_target_root.add_child(target)
+	initial_capacity += float(target.get_node("Drainable").get("capacity"))
 	var effect: Node = target.get_node_or_null("DepletionEffect")
 	if effect != null and effect.has_signal(&"life_absorbed"):
 		effect.connect(&"life_absorbed", _on_drained)
@@ -286,7 +286,7 @@ func _on_drained(amount: float) -> void:
 	progress_changed.emit(drained_capacity, initial_capacity)
 
 func _scenery(kind: StringName, position_xz: Vector2, dimensions: Vector3) -> void:
-	_place_target(kind, Vector3(position_xz.x, 0, position_xz.y), dimensions, 4.0, 1.0, _rng.randf_range(-PI, PI))
+	_place_target(kind, Vector3(position_xz.x, 0, position_xz.y), dimensions, _rng.randf_range(-PI, PI))
 
 func _build_settlement() -> void:
 	var wood: Material = _material(Color(0.25, 0.20, 0.14))
@@ -297,8 +297,7 @@ func _build_settlement() -> void:
 		var kind: StringName = &"shed" if farm else StringName("house%d" % (1 + (i - 2) % 5))
 		var large: bool = i in [7, 12, 15]
 		var dimensions: Vector3 = Vector3(22, 13, 20) if large else (Vector3(12, 8, 12) if i >= 16 else Vector3(17, 10, 16))
-		var gate: float = 2.5 if i < 6 else (3.0 if i < 10 else (3.5 if i < 14 else 4.0))
-		_buildings.append(_place_target(kind, center, dimensions, 90.0 if farm else (100.0 if i < 16 else 43.75), gate, 0.0 if center.x < 0 else PI))
+		_buildings.append(_place_target(kind, center, dimensions, 0.0 if center.x < 0 else PI))
 		_box(Vector3(center.x, -0.34, center.z), Vector3(dimensions.x + 0.8, 0.36, dimensions.z + 0.8), stone, true)
 		for offset: float in [-11.0, 11.0]:
 			if not _on_road(Vector2(center.x + offset, center.z + 9.5), 3.0):
@@ -323,10 +322,10 @@ func _fence(p: Vector2, dimensions: Vector3, material: Material) -> void:
 	var scene: PackedScene = PackedScene.new()
 	scene.pack(root)
 	root.free()
-	var target: Node3D = Catalog.instantiate_model(&"fence", scene, null, dimensions + Vector3(0, 0.5, 0), 2.0, true)
+	var target: Node3D = Catalog.instantiate_model(&"fence", scene, null, dimensions + Vector3(0, 0.5, 0), true)
 	target.position = Vector3(p.x, ground_height(p.x, p.y), p.y)
 	target.ground_position = ground_position
-	_register_target(target, 2.0)
+	_register_target(target)
 
 func _box(location: Vector3, dimensions: Vector3, material: Material, blocking: bool) -> void:
 	var instance: MeshInstance3D = MeshInstance3D.new()
@@ -359,34 +358,34 @@ func _build_resources() -> void:
 			var radius: float = _rng.randf_range(12, 17) if starter else _rng.randf_range(6, 16)
 			var p: Vector2 = center + Vector2(cos(angle), sin(angle)) * radius
 			p.y = maxf(p.y, 36.0)
-			_place_target(&"bush" if i % 2 == 0 else &"bush_alt", Vector3(p.x, 0, p.y), Vector3(3.2, 2.1, 3.2), 10, 1.0, angle)
+			_place_target(&"bush" if i % 2 == 0 else &"bush_alt", Vector3(p.x, 0, p.y), Vector3(3.2, 2.1, 3.2), angle)
 	for i: int in 12:
 		var p: Vector3 = Vector3(-80 if i % 2 == 0 else 80, 0, 45 + (i / 2) * 20)
-		_place_target(StringName("forest_tree%d" % (1 + i % 4)), p, Vector3(8, 11, 8), 15, 1.8)
+		_place_target(StringName("forest_tree%d" % (1 + i % 4)), p, Vector3(8, 11, 8))
 	for row: int in 4:
 		for column: int in 4:
 			var p: Vector2 = Vector2(-72 + column * 14, 27 - row * 13)
 			if _clear_route(p):
 				p = Vector2(-121 - column * 3, 40 + row * 13)
-			_place_target(StringName("forest_tree%d" % (1 + (row + column) % 4)), Vector3(p.x, 0, p.y), Vector3(7, 9, 7), 25, 1.8)
+			_place_target(StringName("forest_tree%d" % (1 + (row + column) % 4)), Vector3(p.x, 0, p.y), Vector3(7, 9, 7))
 	for i: int in 10:
-		_place_target(&"bush", Vector3(53 + (i % 5) * 9, 0, 15 + (i / 5) * 12), Vector3(3, 2, 3), 12, 1)
+		_place_target(&"bush", Vector3(53 + (i % 5) * 9, 0, 15 + (i / 5) * 12), Vector3(3, 2, 3))
 	for i: int in 12:
 		var x: float = -108.0 if i % 2 == 0 else 108.0
 		var z: float = -28.0 - (i / 2) * 23.0
 		var p: Vector2 = Vector2(x, z)
 		if _clear_route(p):
 			p.x = signf(x) * 130
-		_place_target(StringName("forest_tree%d" % (1 + i % 4)), Vector3(p.x, 0, p.y), Vector3(8, 12, 8), 15, 1.8)
+		_place_target(StringName("forest_tree%d" % (1 + i % 4)), Vector3(p.x, 0, p.y), Vector3(8, 12, 8))
 		var bush: Vector2 = Vector2(x * 0.77, z + 6)
 		if _clear_route(bush):
 			bush.x = signf(x) * 124
-		_place_target(&"bush_alt", Vector3(bush.x, 0, bush.y), Vector3(3, 2, 3), 10, 1)
+		_place_target(&"bush_alt", Vector3(bush.x, 0, bush.y), Vector3(3, 2, 3))
 	var field_edge: Array[Vector2] = [Vector2(98, 54), Vector2(99, 76), Vector2(98, 98), Vector2(98, 120), Vector2(99, 138), Vector2(98, 164)]
 	for side: int in [-1, 1]:
 		for i: int in field_edge.size():
 			var p: Vector2 = field_edge[i] * Vector2(side, 1)
-			_place_target(StringName("forest_tree%d" % (1 + (i + (2 if side > 0 else 0)) % 4)), Vector3(p.x, 0, p.y), Vector3(8, 11, 8), 10, 1.8)
+			_place_target(StringName("forest_tree%d" % (1 + (i + (2 if side > 0 else 0)) % 4)), Vector3(p.x, 0, p.y), Vector3(8, 11, 8))
 
 func _build_margins() -> void:
 	for i: int in 18:
@@ -474,11 +473,7 @@ func _finish_cover() -> void:
 		patch.position = Vector3(p.x, ground_height(p.x, p.y), p.y)
 		patch.ground_position = ground_position
 		var batches: Dictionary = _cover[key]
-		var count: int = 0
-		for mesh: Mesh in batches:
-			count += batches[mesh].size()
-		var capacity: float = clampf(count * 1.2, 15.0, 30.0)
-		patch.configure(capacity)
+		patch.configure()
 		for mesh: Mesh in batches:
 			if not meshes.has(mesh):
 				var fade_mesh: Mesh = mesh.duplicate() as Mesh
@@ -518,7 +513,7 @@ func _finish_cover() -> void:
 			instance.visibility_range_end = 90
 			instance.visibility_range_end_margin = 15
 			patch.visual.add_child(instance)
-		_register_target(patch, capacity)
+		_decoration.add_child(patch)
 	_cover.clear()
 
 func _build_spawns() -> void:

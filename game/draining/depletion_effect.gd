@@ -17,6 +17,7 @@ const MAGNET_MAX_SPEED: float = 55.0
 const MAGNET_CONSUME_RADIUS: float = 0.6
 const MAGNET_SHRINK_DISTANCE: float = 1.4
 const MAGNET_MAX_LIFETIME: float = 30.0
+const AUTOMATIC_ABSORB_SECONDS: float = 1.0
 
 static var _animated_collapses: int = 0
 
@@ -38,7 +39,7 @@ class MagnetPiece:
 @export var style: Style = Style.RUBBLE
 @export var building_collapse: bool = false
 var female_voice: bool = false
-var absorbed_life: float = 0.0
+var reserved_life: float = 0.0
 @export_range(0.1, 5.0, 0.05) var building_collapse_duration: float = 0.8
 @export_range(0.1, 5.0, 0.05) var plant_collapse_duration: float = 1.15
 @export var dust_color: Color = Color(0.56, 0.49, 0.37, 0.48)
@@ -65,6 +66,9 @@ var _magnet_elapsed: float = 0.0
 var _pending_life: float = 0.0
 var _absorb_sound_played: bool = false
 var _flattened: bool = false
+var _remaining_life: float = 0.0
+var _automatic_life: float = 0.0
+var _automatic_time_left: float = 0.0
 
 
 func _ready() -> void:
@@ -73,6 +77,14 @@ func _ready() -> void:
 
 func _exit_tree() -> void:
 	_release_animated_collapse()
+
+
+func configure_reward(amount: float, recipient: Node3D) -> void:
+	assert(not _started and is_finite(amount) and amount >= 0.0 and is_instance_valid(recipient))
+	process_mode = Node.PROCESS_MODE_PAUSABLE
+	reserved_life = amount
+	_remaining_life = amount
+	_magnet_target = recipient
 
 
 func configure(source_visual: Node3D, fitted_size: Vector3, ground_position: Callable) -> void:
@@ -102,7 +114,9 @@ func start() -> void:
 	_owns_animated_collapse = has_visual and _animated_collapses < ANIMATED_COLLAPSE_BUDGET
 	if _owns_animated_collapse:
 		_animated_collapses += 1
-	_magnet_enabled = style == Style.RUBBLE and absorbed_life > 0.0 and _resolve_magnet_target()
+	_magnet_enabled = style == Style.RUBBLE and _remaining_life > 0.0 and is_instance_valid(_magnet_target)
+	if not _magnet_enabled and _remaining_life > 0.0:
+		_start_automatic_transfer()
 	if _owns_animated_collapse and style != Style.HUMANOID:
 		_spawn_dust()
 	_spawn_fragments(_owns_animated_collapse)
@@ -121,18 +135,29 @@ func start() -> void:
 	tween.tween_callback(_release_animated_collapse)
 
 
-func _resolve_magnet_target() -> bool:
-	if not is_inside_tree():
-		return false
-	_magnet_target = get_tree().get_first_node_in_group(&"player") as Node3D
-	return is_instance_valid(_magnet_target)
+func _start_automatic_transfer() -> void:
+	_automatic_life = _remaining_life
+	_automatic_time_left = AUTOMATIC_ABSORB_SECONDS
+	set_process(true)
 
 
 func _process(delta: float) -> void:
+	if not is_instance_valid(_magnet_target) or not bool(_magnet_target.get("gameplay_enabled")):
+		return
+	if _automatic_time_left > 0.0:
+		var elapsed: float = minf(delta, _automatic_time_left)
+		_automatic_time_left = maxf(0.0, _automatic_time_left - elapsed)
+		_pending_life += _remaining_life if _automatic_time_left <= 0.0 else _automatic_life * elapsed / AUTOMATIC_ABSORB_SECONDS
+		_flush_absorbed_life()
+		if _automatic_time_left <= 0.0:
+			set_process(false)
+			if _magnet_enabled:
+				queue_free()
+		return
 	if _magnet_pieces.is_empty():
 		return
 	var step: float = minf(delta, 1.0 / 30.0)
-	_magnet_elapsed += step
+	_magnet_elapsed += delta
 	var target_global: Vector3 = _magnet_global_position()
 	var has_target: bool = target_global.is_finite()
 	var target: Vector3 = to_local(target_global) if has_target else Vector3.ZERO
@@ -159,7 +184,7 @@ func _process(delta: float) -> void:
 			_play_absorb_sound()
 		var offset: Vector3 = target - piece.position
 		var distance: float = offset.length()
-		var direction: Vector3 = offset / distance
+		var direction: Vector3 = offset / maxf(distance, 0.0001)
 		var acceleration: float = minf(MAGNET_BASE_ACCELERATION + MAGNET_PULL / maxf(distance * distance, 0.04), MAGNET_MAX_ACCELERATION)
 		piece.velocity += direction * acceleration * step
 		if piece.velocity.length_squared() > MAGNET_MAX_SPEED * MAGNET_MAX_SPEED:
@@ -177,19 +202,26 @@ func _process(delta: float) -> void:
 		_write_magnet_piece(piece, shrink)
 	if _pending_life > 0.0:
 		_flush_absorbed_life()
-	if not alive or _magnet_elapsed > MAGNET_MAX_LIFETIME:
+	if not alive:
+		_pending_life += _remaining_life
+		_flush_absorbed_life()
 		_magnet_pieces.clear()
 		queue_free()
+	elif _magnet_elapsed > MAGNET_MAX_LIFETIME:
+		for piece: MagnetPiece in _magnet_pieces:
+			piece.batch.visible_instance_count = 0
+		_magnet_pieces.clear()
+		_start_automatic_transfer()
 
 
 func _flush_absorbed_life() -> void:
-	var amount: float = _pending_life
+	var amount: float = minf(_pending_life, _remaining_life)
 	_pending_life = 0.0
 	if amount <= 0.0:
 		return
+	_remaining_life = maxf(0.0, _remaining_life - amount)
+	_magnet_target.call(&"gain_life", amount)
 	life_absorbed.emit(amount)
-	if is_instance_valid(_magnet_target) and _magnet_target.has_method(&"gain_life"):
-		_magnet_target.call(&"gain_life", amount)
 
 
 func _play_absorb_sound() -> void:
@@ -210,10 +242,7 @@ func _find_gameplay_sfx() -> Node:
 
 func _magnet_global_position() -> Vector3:
 	if not is_instance_valid(_magnet_target):
-		if is_inside_tree():
-			_magnet_target = get_tree().get_first_node_in_group(&"player") as Node3D
-		if not is_instance_valid(_magnet_target):
-			return Vector3.INF
+		return Vector3.INF
 	if _magnet_target.has_method(&"get_collection_position"):
 		var value: Variant = _magnet_target.call(&"get_collection_position")
 		if value is Vector3 and (value as Vector3).is_finite():
@@ -348,6 +377,7 @@ func _spawn_fragments(animated: bool) -> void:
 		add_child(instance)
 		batches.append(batch)
 		indices.append(0)
+	var assigned_life: float = 0.0
 	for i: int in count:
 		var material_index: int = i % materials.size()
 		var dimensions: Vector3
@@ -379,7 +409,8 @@ func _spawn_fragments(animated: bool) -> void:
 			piece.landing_y = destination.y
 			piece.delay = 0.45 + building_collapse_duration + rng.randf_range(0.0, 0.35)
 			piece.spin = rng.randf_range(-4.5, 4.5)
-			piece.life_share = absorbed_life / float(count)
+			piece.life_share = reserved_life - assigned_life if i == count - 1 else reserved_life / float(count)
+			assigned_life += piece.life_share
 			_magnet_pieces.append(piece)
 			indices[material_index] += 1
 			continue

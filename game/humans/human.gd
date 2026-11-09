@@ -3,7 +3,7 @@ extends CharacterBody3D
 const DEPLETION_EFFECT: PackedScene = preload("res://game/draining/depletion_effect.tscn")
 const DEPLETION_SCRIPT = preload("res://game/draining/depletion_effect.gd")
 const Drainable = preload("res://game/draining/drainable.gd")
-const BODY_SIZE: Vector3 = Vector3(0.7, 1.8, 0.7)
+const WorldModel = preload("res://game/world/world_model.gd")
 
 @export var ranged: bool = false
 @export var movement_speed: float = 3.7
@@ -12,8 +12,6 @@ const BODY_SIZE: Vector3 = Vector3(0.7, 1.8, 0.7)
 @export var windup: float = 0.85
 @export var cooldown: float = 2.4
 @export var impact_radius: float = 1.8
-@export var life_capacity: float = 16.0
-@export var required_size: float = 1.0
 @export var steering_lookahead: float = 1.8
 
 var _balancer: CharacterBody3D
@@ -34,7 +32,8 @@ var _returning: bool = false
 var _warning_material: StandardMaterial3D
 var _remains_parent: Node3D
 var _ground_position: Callable
-@onready var drainable: Area3D = $Drainable
+var _model_dimensions: Vector3
+@onready var drainable: Drainable = $Drainable
 @onready var _warning: MeshInstance3D = $Warning
 @onready var _navigation: NavigationAgent3D = $NavigationAgent3D
 @onready var _visual: Node3D = $Visual
@@ -53,13 +52,12 @@ func configure_remains(remains_parent: Node3D, ground_position: Callable) -> voi
 	_ground_position = ground_position
 
 func _ready() -> void:
-	drainable.capacity = life_capacity
-	drainable.remaining_capacity = life_capacity
-	drainable.required_size = Drainable.gate_to_size(required_size)
+	_visual.configure(ranged)
+	_model_dimensions = WorldModel.bounds(_visual, true).size
+	drainable.configure_volume(_model_dimensions * global_basis.get_scale().abs())
 	drainable.emission_offset = Vector3(0.0, 1.0, 0.0)
 	drainable.emission_radius = 0.4
-	drainable.depleted.connect(_on_depleted)
-	_visual.configure(ranged)
+	drainable.collapsed.connect(_on_collapsed)
 	_warning_material = StandardMaterial3D.new()
 	_warning_material.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
 	_warning_material.albedo_color = Color("ffc24b")
@@ -244,7 +242,7 @@ func _resolve_attack() -> void:
 	if offset.length() <= _attack_impact_radius and reach.length() <= _effective_attack_range() and _has_line_of_sight(reach_target):
 		_balancer.call("take_damage", damage)
 
-func _on_depleted() -> void:
+func _on_collapsed() -> void:
 	stop()
 	collision_layer = 0
 	collision_mask = 0
@@ -253,14 +251,16 @@ func _on_depleted() -> void:
 	_create_remains.call_deferred()
 
 func _create_remains() -> void:
-	if is_instance_valid(_remains_parent) and _remains_parent.is_inside_tree():
+	var remains_parent: Node = _remains_parent if is_instance_valid(_remains_parent) and _remains_parent.is_inside_tree() else get_parent()
+	if remains_parent != null:
 		var effect: Node3D = DEPLETION_EFFECT.instantiate() as Node3D
 		effect.process_mode = Node.PROCESS_MODE_PAUSABLE
-		_remains_parent.add_child(effect)
+		remains_parent.add_child(effect)
 		effect.global_transform = Transform3D(Basis.IDENTITY, global_position)
 		effect.style = DEPLETION_SCRIPT.Style.HUMANOID
 		effect.female_voice = _visual.female_voice
+		effect.configure_reward(drainable.take_collapse_life(), drainable.collector)
 		_visual.reparent(effect, true)
-		effect.configure(_visual, BODY_SIZE, _ground_position)
+		effect.configure(_visual, _model_dimensions, _ground_position)
 		effect.start()
 	queue_free()

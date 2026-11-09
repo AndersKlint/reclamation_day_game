@@ -3,7 +3,6 @@ extends RefCounted
 const Assets = preload("res://game/demo/city/city_assets.gd")
 const Layout = preload("res://game/demo/city/city_layout.gd")
 const Catalog = preload("res://game/demo/targets/demo_asset_catalog.gd")
-const Drainable = preload("res://game/draining/drainable.gd")
 
 const FOREST_TREES: Array[StringName] = [&"forest_tree1", &"forest_tree2", &"forest_tree3", &"forest_tree4"]
 
@@ -56,27 +55,25 @@ static func _build_buildings(region: Node3D, buildings: Array) -> void:
 			StringName(entry["kind"]),
 			Vector3(position.x, 0.0, position.y),
 			dimensions,
-			float(entry["capacity"]),
-			float(entry["gate"]),
 			float(entry["yaw"])
 		)
 		target.set_meta(&"city_district", entry["district"])
 		target.set_meta(&"city_tall", bool(entry["tall"]))
 
 static func _build_formal_park(region: Node3D, center: Vector2) -> void:
-	_place_model(region, &"city_fountain", Assets.FOUNTAIN_ROUND, null, center, Vector3(5.6, 2.6, 5.6), 250.0, 4.0, 0.0, false)
+	_place_model(region, &"city_fountain", Assets.FOUNTAIN_ROUND, null, center, Vector3(5.6, 2.6, 5.6), 0.0, false)
 	for i: int in 8:
 		var angle: float = TAU * float(i) / 8.0
 		var p: Vector2 = center + Vector2(cos(angle), sin(angle)) * 10.0
-		_place_model(region, &"city_bench", Assets.BENCH, Assets.BENCH_TEXTURE, p, Vector3(2.4, 0.8, 0.9), 45.0, 2.0, _face(center, p), true)
+		_place_model(region, &"city_bench", Assets.BENCH, Assets.BENCH_TEXTURE, p, Vector3(2.4, 0.8, 0.9), _face(center, p), true)
 	for i: int in 4:
 		var angle: float = TAU * (float(i) + 0.5) / 4.0
 		var p: Vector2 = center + Vector2(cos(angle), sin(angle)) * 15.0
-		_place_model(region, &"city_flowerbed", Assets.FLOWERBED, null, p, Vector3(2.4, 1.0, 2.4), 40.0, 2.0, angle, true)
+		_place_model(region, &"city_flowerbed", Assets.FLOWERBED, null, p, Vector3(2.4, 1.0, 2.4), angle, true)
 	for i: int in 4:
 		var angle: float = TAU * float(i) / 4.0
 		var p: Vector2 = center + Vector2(cos(angle), sin(angle)) * 24.0
-		_place_model(region, &"city_hedge", Assets.HEDGE_LONG, null, p, Vector3(4.3, 1.2, 1.2), 70.0, 2.5, angle + PI * 0.5, true, true)
+		_place_model(region, &"city_hedge", Assets.HEDGE_LONG, null, p, Vector3(4.3, 1.2, 1.2), angle + PI * 0.5, true, true)
 	for i: int in 8:
 		var angle: float = TAU * (float(i) + 0.5) / 8.0
 		var p: Vector2 = center + Vector2(cos(angle), sin(angle)) * 29.0
@@ -85,18 +82,18 @@ static func _build_formal_park(region: Node3D, center: Vector2) -> void:
 		_place_lamp(region, p)
 
 static func _build_woodland_park(region: Node3D, center: Vector2) -> void:
-	_place_model(region, &"city_gazebo", Assets.GAZEBO, null, center, Vector3(6.2, 5.8, 6.2), 300.0, 4.5, 0.0, false)
+	_place_model(region, &"city_gazebo", Assets.GAZEBO, null, center, Vector3(6.2, 5.8, 6.2), 0.0, false)
 	for i: int in 6:
 		var angle: float = TAU * float(i) / 6.0 + 0.4
 		var p: Vector2 = center + Vector2(cos(angle), sin(angle)) * 13.0
-		_place_model(region, &"city_bench", Assets.BENCH, Assets.BENCH_TEXTURE, p, Vector3(2.4, 0.8, 0.9), 45.0, 2.0, _face(center, p), true)
+		_place_model(region, &"city_bench", Assets.BENCH, Assets.BENCH_TEXTURE, p, Vector3(2.4, 0.8, 0.9), _face(center, p), true)
 	for i: int in 4:
 		var angle: float = TAU * (float(i) + 0.5) / 4.0
 		var p: Vector2 = center + Vector2(cos(angle), sin(angle)) * 19.0
-		_place_model(region, &"city_flowerbed", Assets.FLOWERBED, null, p, Vector3(2.4, 1.0, 2.4), 40.0, 2.0, angle, true)
+		_place_model(region, &"city_flowerbed", Assets.FLOWERBED, null, p, Vector3(2.4, 1.0, 2.4), angle, true)
 	for i: int in 2:
 		var p: Vector2 = center + Vector2(-18.0 + i * 36.0, 31.0)
-		_place_model(region, &"city_hedge_square", Assets.HEDGE_SQUARE, null, p, Vector3(2.3, 1.2, 2.3), 55.0, 2.4, 0.0, true, true)
+		_place_model(region, &"city_hedge_square", Assets.HEDGE_SQUARE, null, p, Vector3(2.3, 1.2, 2.3), 0.0, true, true)
 	for i: int in 18:
 		var angle: float = TAU * float(i) / 18.0 + 0.17
 		var radius: float = 19.0 + float((i * 7) % 14)
@@ -106,19 +103,19 @@ static func _build_woodland_park(region: Node3D, center: Vector2) -> void:
 		_place_lamp(region, p)
 
 static func _build_plaza(region: Node3D, center: Vector2) -> void:
-	_place_model(region, &"city_fountain", Assets.FOUNTAIN_SQUARE, null, center, Vector3(6.0, 3.9, 6.0), 350.0, 4.0, 0.0, false)
+	_place_model(region, &"city_fountain", Assets.FOUNTAIN_SQUARE, null, center, Vector3(6.0, 3.9, 6.0), 0.0, false)
 	for i: int in 8:
 		var angle: float = TAU * float(i) / 8.0
 		var p: Vector2 = center + Vector2(cos(angle), sin(angle)) * 11.0
-		_place_model(region, &"city_bench", Assets.BENCH, Assets.BENCH_TEXTURE, p, Vector3(2.4, 0.8, 0.9), 45.0, 2.0, _face(center, p), true)
+		_place_model(region, &"city_bench", Assets.BENCH, Assets.BENCH_TEXTURE, p, Vector3(2.4, 0.8, 0.9), _face(center, p), true)
 	for i: int in 8:
 		var angle: float = TAU * float(i) / 8.0 + PI * 0.125
 		var p: Vector2 = center + Vector2(cos(angle), sin(angle)) * 17.0
-		_place_model(region, &"city_flowerbed", Assets.FLOWERBED, null, p, Vector3(2.4, 1.0, 2.4), 40.0, 2.0, angle, true)
+		_place_model(region, &"city_flowerbed", Assets.FLOWERBED, null, p, Vector3(2.4, 1.0, 2.4), angle, true)
 	for i: int in 4:
 		var angle: float = TAU * float(i) / 4.0
 		var p: Vector2 = center + Vector2(cos(angle), sin(angle)) * 24.0
-		_place_model(region, &"city_hedge", Assets.HEDGE_LONG, null, p, Vector3(4.3, 1.2, 1.2), 70.0, 2.5, angle + PI * 0.5, true, true)
+		_place_model(region, &"city_hedge", Assets.HEDGE_LONG, null, p, Vector3(4.3, 1.2, 1.2), angle + PI * 0.5, true, true)
 	for i: int in 4:
 		var angle: float = TAU * (float(i) + 0.5) / 4.0
 		var p: Vector2 = center + Vector2(cos(angle), sin(angle)) * 29.0
@@ -130,17 +127,17 @@ static func _build_staging(region: Node3D, center: Vector2) -> void:
 	for row: int in 2:
 		for i: int in 5:
 			var p: Vector2 = center + Vector2(-10.0 + i * 5.0, -14.0 + row * 28.0)
-			_place_model(region, &"city_barrier", Assets.BARRIER_STRONG, null, p, Vector3(1.1, 1.1, 0.35), 20.0, 1.5, 0.0, false, true)
+			_place_model(region, &"city_barrier", Assets.BARRIER_STRONG, null, p, Vector3(1.1, 1.1, 0.35), 0.0, false, true)
 	for side: float in [-1.0, 1.0]:
 		for i: int in 4:
 			var p: Vector2 = center + Vector2(side * 24.0, -12.0 + i * 8.0)
-			_place_model(region, &"city_barrier", Assets.BARRIER_A, null, p, Vector3(1.1, 1.0, 0.34), 20.0, 1.5, PI * 0.5, false, true)
+			_place_model(region, &"city_barrier", Assets.BARRIER_A, null, p, Vector3(1.1, 1.0, 0.34), PI * 0.5, false, true)
 	for i: int in 3:
 		var p: Vector2 = center + Vector2(-12.0 + i * 12.0, 4.0)
 		var scene: PackedScene = Assets.TRUCK_GREEN if i % 2 == 0 else Assets.TRUCK_GREY
-		_place_model(region, &"city_truck", scene, null, p, Vector3(2.0, 2.4, 4.0), 180.0, 3.0, PI * 0.5, false, true)
+		_place_model(region, &"city_truck", scene, null, p, Vector3(2.0, 2.4, 4.0), PI * 0.5, false, true)
 	for p: Vector2 in [center + Vector2(-26, -26), center + Vector2(-20, -29), center + Vector2(24, 27), center + Vector2(29, 22)]:
-		_place_model(region, &"city_dumpster", Assets.DUMPSTER, null, p, Vector3(1.4, 1.6, 1.2), 50.0, 2.0, 0.0, false, true)
+		_place_model(region, &"city_dumpster", Assets.DUMPSTER, null, p, Vector3(1.4, 1.6, 1.2), 0.0, false, true)
 	for p: Vector2 in [center + Vector2(-28, 0), center + Vector2(28, 0)]:
 		_place_lamp(region, p)
 
@@ -156,7 +153,7 @@ static func _build_street_details(region: Node3D, root: Node3D) -> void:
 			var p: Vector2 = Vector2(x0 + 10.8, (z0 + z1) * 0.5)
 			_place_tree(region, p, 8.0, 11.0)
 			if ix % 2 == 0:
-				_place_model(region, &"city_bench", Assets.BENCH, Assets.BENCH_TEXTURE, Vector2(x1 - 10.8, (z0 + z1) * 0.5), Vector3(2.4, 0.8, 0.9), 45.0, 2.0, -PI * 0.5, true)
+				_place_model(region, &"city_bench", Assets.BENCH, Assets.BENCH_TEXTURE, Vector2(x1 - 10.8, (z0 + z1) * 0.5), Vector3(2.4, 0.8, 0.9), -PI * 0.5, true)
 	for x: float in [-96.0, 0.0, 96.0]:
 		for z: float in [-340.0, -460.0, -580.0]:
 			_traffic_signal(root, Vector2(x + 8.8, z + 8.8), -PI * 0.5)
@@ -177,7 +174,7 @@ static func _build_street_lamps(region: Node3D, reserved: Dictionary) -> void:
 
 static func _place_tree(region: Node3D, p: Vector2, width: float, height: float) -> void:
 	var kind: StringName = FOREST_TREES[absi(int(p.x + p.y)) % FOREST_TREES.size()]
-	region._place_target(kind, Vector3(p.x, 0.0, p.y), Vector3(width, height, width), 30.0, 1.8, float((int(p.x) + int(p.y)) % 6) * 0.8)
+	region._place_target(kind, Vector3(p.x, 0.0, p.y), Vector3(width, height, width), float((int(p.x) + int(p.y)) % 6) * 0.8)
 
 static func _place_model(
 	region: Node3D,
@@ -186,21 +183,17 @@ static func _place_model(
 	texture: Texture2D,
 	p: Vector2,
 	dimensions: Vector3,
-	capacity: float,
-	gate: float,
 	yaw: float,
 	wooden: bool,
 	blocking: bool = false
 ) -> Node3D:
-	var target: Node3D = Catalog.instantiate_model(kind, scene, texture, dimensions, capacity, wooden)
-	var drainable: Node = target.get_node("Drainable")
-	drainable.set("required_size", Drainable.gate_to_size(maxf(gate, 0.1)))
+	var target: Node3D = Catalog.instantiate_model(kind, scene, texture, dimensions, wooden)
 	target.set("blocking", blocking)
 	target.position = Vector3(p.x, float(region.ground_height(p.x, p.y)), p.y)
 	target.rotation.y = yaw
 	target.ground_position = Callable(region, "ground_position")
 	target.set_meta(&"zone", region.get_zone_at(region.to_global(target.position)))
-	region._register_target(target, capacity)
+	region._register_target(target)
 	return target
 
 static func _place_lamp(region: Node3D, p: Vector2) -> void:
@@ -234,13 +227,13 @@ static func _place_lamp(region: Node3D, p: Vector2) -> void:
 	var scene: PackedScene = PackedScene.new()
 	scene.pack(lamp)
 	lamp.free()
-	var target: Node3D = Catalog.instantiate_model(&"city_lamp", scene, null, Vector3(0.8, 5.4, 0.8), 4.0, false)
+	var target: Node3D = Catalog.instantiate_model(&"city_lamp", scene, null, Vector3(0.8, 5.4, 0.8), false)
 	target.preserve_model_lights = true
 	target.position = Vector3(p.x, float(region.ground_height(p.x, p.y)), p.y)
 	target.rotation.y = 0.0
 	target.ground_position = Callable(region, "ground_position")
 	target.set_meta(&"zone", region.get_zone_at(region.to_global(target.position)))
-	region._register_target(target, 4.0)
+	region._register_target(target)
 
 static func _traffic_signal(root: Node3D, p: Vector2, yaw: float) -> void:
 	var post: Node3D = Node3D.new()

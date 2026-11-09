@@ -94,10 +94,10 @@ func update_health(current: float, maximum: float) -> void:
 	_health_bar.value = clampf(current / maximum, 0.0, 1.0) if maximum > 0.0 else 0.0
 
 
-func update_growth(life: float, size: float, next_threshold: float, earned_tiers: int = 0) -> void:
+func update_growth(life: float, size: float, next_threshold: float, earned_tiers: int = 0, volume: float = 0.0) -> void:
 	var next_text: String = "NEXT CHOICE AT —" if is_inf(next_threshold) else "NEXT CHOICE AT %s" % _format_amount(next_threshold)
-	_growth_label.text = "LIFE  %s     SIZE  %.2f×\nTIER  %d     %s" % [
-		_format_amount(life), size, earned_tiers, next_text]
+	_growth_label.text = "LIFE  %s     SIZE  %.2f×     VOLUME  %s m³\nTIER  %d     %s" % [
+		_format_amount(life), size, _format_amount(volume), earned_tiers, next_text]
 
 
 func update_progress(drained: float, initial: float) -> void:
@@ -188,6 +188,10 @@ func _format_amount(value: float) -> String:
 	if is_nan(value):
 		return "—"
 	var magnitude: float = absf(value)
+	if magnitude > 0.0 and magnitude < 0.01:
+		return "%.2e" % value
+	if magnitude < 10.0:
+		return "%.2f" % value
 	if magnitude < 10_000.0:
 		return "%.0f" % value
 	if magnitude < 1_000_000.0:

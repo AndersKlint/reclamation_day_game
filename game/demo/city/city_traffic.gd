@@ -9,7 +9,6 @@ const MAX_TRAFFIC_ROUTES: int = 4
 const STAGING_POLICE_COUNT: int = 3
 const TAXI_COUNT: int = 6
 const ACTOR_METHODS: Array[StringName] = [&"configure_car", &"configure_traffic", &"set_active"]
-const ACTOR_CONSTANTS: Array[String] = ["LIFE_CAPACITY", "REQUIRED_SIZE"]
 const REGION_METHODS: Array[StringName] = [
 	&"get_city_parking",
 	&"get_traffic_routes",
@@ -22,7 +21,6 @@ var _region: Node3D
 var _player: CharacterBody3D
 var _parked: Array[Node3D] = []
 var _moving: Array[Node3D] = []
-var _capacity: float = 0.0
 var _configured: bool = false
 var _active: bool = false
 
@@ -39,7 +37,6 @@ func configure(region: Node3D, player: CharacterBody3D) -> void:
 		return
 	_region = region
 	_player = player
-	_capacity = float(CityCar.LIFE_CAPACITY)
 	_configured = true
 	_spawn_parked()
 	_spawn_moving()
@@ -184,7 +181,7 @@ func _add_car(variant: int, placement: Transform3D, route: PackedVector3Array) -
 		car.free()
 		return null
 	# Region registration attaches the car and wires drain counting exactly once.
-	_region.call(&"_register_target", car, _capacity)
+	_region.call(&"_register_target", car)
 	# Placement follows attachment so the region transform is applied.
 	car.global_transform = placement
 	return car
@@ -194,13 +191,6 @@ func _validate_actor() -> bool:
 	if probe == null:
 		push_error("CityTraffic requires a Node3D CityCar")
 		return false
-	var script: Script = probe.get_script()
-	var constants: Dictionary = script.get_script_constant_map()
-	for constant: String in ACTOR_CONSTANTS:
-		if not constants.has(constant):
-			push_error("CityTraffic requires CityCar.%s" % constant)
-			probe.free()
-			return false
 	var has_ground: bool = false
 	for property: Dictionary in probe.get_property_list():
 		if String(property["name"]) == "ground_position":
@@ -211,6 +201,7 @@ func _validate_actor() -> bool:
 		probe.free()
 		return false
 	var methods: Dictionary = {}
+	var script: Script = probe.get_script()
 	for method: Dictionary in script.get_script_method_list():
 		methods[String(method["name"])] = true
 	for method: StringName in ACTOR_METHODS:

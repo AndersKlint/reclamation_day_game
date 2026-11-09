@@ -5,6 +5,7 @@ const TEXTURE: Texture2D = preload("res://available-assets/retro3d-assets/Charac
 const BODY_SHADER: Shader = preload("res://game/balancer/reaper_body.gdshader")
 const SHROUD_SHADER: Shader = preload("res://game/balancer/reaper_shroud.gdshader")
 const HEIGHT: float = 2.2
+const WorldModel = preload("res://game/world/world_model.gd")
 const LEG_BONES: Array[StringName] = [&"Bone.009", &"Bone.010"]
 const ARM_BONES: Array[StringName] = [&"Bone.004", &"Bone.007"]
 const HOVER_RATE: float = 1.15
@@ -21,11 +22,13 @@ var _arm_bones: Array[int] = []
 var _phase: float = 0.0
 var _lean: float = 0.0
 var _base_y: float = 0.0
+var model_dimensions: Vector3
 
 func _ready() -> void:
 	_build_body()
 	_build_shroud(1.30, -0.02, 0.30, 0.58, 0.0)
 	_build_shroud(1.58, 1.06, 0.20, 0.44, 2.4)
+	model_dimensions = WorldModel.bounds(self, true).size
 	_base_y = position.y + HOVER_OFFSET
 	position.y = _base_y
 

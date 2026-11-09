@@ -2,7 +2,8 @@ extends CharacterBody3D
 
 const DEPLETION_EFFECT: PackedScene = preload("res://game/draining/depletion_effect.tscn")
 const DEPLETION_SCRIPT = preload("res://game/draining/depletion_effect.gd")
-const BODY_SIZE: Vector3 = Vector3(0.7, 1.8, 0.7)
+const WorldModel = preload("res://game/world/world_model.gd")
+const Drainable = preload("res://game/draining/drainable.gd")
 
 enum State { IDLE, STROLL, STARTLED, FLEE }
 
@@ -19,8 +20,9 @@ var _last_position: Vector3
 var _stuck_time: float = 0.0
 var _remains_parent: Node3D
 var _ground_position: Callable
+var _model_dimensions: Vector3
 @onready var _visual: Node3D = $Visual
-@onready var _drainable: Area3D = $Drainable
+@onready var _drainable: Drainable = $Drainable
 
 func configure(balancer: CharacterBody3D, model: PackedScene) -> void:
 	player = balancer
@@ -29,6 +31,9 @@ func configure(balancer: CharacterBody3D, model: PackedScene) -> void:
 	actor.rotation.y = PI
 	_animation = actor.find_child("AnimationPlayer", true, false) as AnimationPlayer
 	assert(_animation != null, "Civilian model requires AnimationPlayer")
+	_animation.stop()
+	_model_dimensions = WorldModel.bounds(_visual, true).size
+	_drainable.configure_volume(_model_dimensions * global_basis.get_scale().abs())
 	var library: AnimationLibrary = _animation.get_animation_library("").duplicate() as AnimationLibrary
 	_animation.remove_animation_library("")
 	_animation.add_animation_library("", library)
@@ -37,7 +42,7 @@ func configure(balancer: CharacterBody3D, model: PackedScene) -> void:
 		animation.loop_mode = Animation.LOOP_LINEAR
 		_animation.get_animation_library("").add_animation(clip, animation)
 	_drainable.drained.connect(_on_drained)
-	_drainable.depleted.connect(_on_depleted)
+	_drainable.collapsed.connect(_on_collapsed)
 	active = true
 	_last_position = global_position
 	_enter(State.IDLE)
@@ -56,7 +61,7 @@ func stop() -> void:
 func can_recycle() -> bool:
 	if not active or is_queued_for_deletion() or _drainable == null:
 		return false
-	return not bool(_drainable.get("is_depleted")) and float(_drainable.get("remaining_capacity")) >= float(_drainable.get("capacity"))
+	return not _drainable.is_collapsed and _drainable.remaining_capacity >= _drainable.capacity
 
 func _enter(next: State) -> void:
 	state = next
@@ -148,21 +153,23 @@ func _on_drained(_amount: float) -> void:
 	if active and state in [State.IDLE, State.STROLL]:
 		_enter(State.STARTLED)
 
-func _on_depleted() -> void:
+func _on_collapsed() -> void:
 	stop()
 	collision_layer = 0
 	collision_mask = 0
 	_create_remains.call_deferred()
 
 func _create_remains() -> void:
-	if is_instance_valid(_remains_parent) and _remains_parent.is_inside_tree():
+	var remains_parent: Node = _remains_parent if is_instance_valid(_remains_parent) and _remains_parent.is_inside_tree() else get_parent()
+	if remains_parent != null:
 		var effect: Node3D = DEPLETION_EFFECT.instantiate() as Node3D
 		effect.process_mode = Node.PROCESS_MODE_PAUSABLE
-		_remains_parent.add_child(effect)
+		remains_parent.add_child(effect)
 		effect.global_transform = Transform3D(Basis.IDENTITY, global_position)
 		effect.style = DEPLETION_SCRIPT.Style.HUMANOID
+		effect.configure_reward(_drainable.take_collapse_life(), _drainable.collector)
 		_visual.reparent(effect, true)
-		effect.configure(_visual, BODY_SIZE, _ground_position)
+		effect.configure(_visual, _model_dimensions, _ground_position)
 		effect.start()
 	queue_free()
 

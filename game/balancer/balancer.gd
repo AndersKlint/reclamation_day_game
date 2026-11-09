@@ -7,12 +7,9 @@ signal died()
 const COMBAT_RADIUS_PER_SIZE: float = 0.45
 const COMBAT_HEIGHT_PER_SIZE: float = 2.2
 const PHYSICAL_SIZE_LIMIT: float = 3.0
-const DRAIN_REACH_PER_SIZE: float = 0.85
-const DRAIN_RATE_PER_SIZE: float = 0.35
+const Scaling = preload("res://game/draining/drain_scaling.gd")
 const MAX_EFFECTIVE_MOVEMENT_SPEED: float = 18.0
 const MAX_EFFECTIVE_ACCELERATION: float = 72.0
-const MAX_EFFECTIVE_DRAIN_REACH: float = 2000.0
-const MAX_EFFECTIVE_DRAIN_RATE: float = 10000.0
 const MAX_UPGRADE_MULTIPLIER: float = 1_000_000.0
 const MAX_ACCUMULATED_MULTIPLIER: float = 1_000_000.0
 const MAX_LIFE: float = 1_000_000_000_000_000_000_000_000_000_000.0
@@ -24,13 +21,16 @@ const BANK_RESPONSE: float = 6.0
 @export var acceleration: float = 24.0
 @export var turning_speed: float = 6.0
 @export var base_drain_reach: float = 2.8
-@export var base_drain_rate: float = 1.6
+@export_range(0.1, 30.0) var base_collapse_seconds: float = 2.0
 @export var max_health: float = 100.0
-@export var life_per_size: float = 120.0
 @export var maximum_size: float = 1000.0
 var gameplay_enabled: bool = false
 var size: float = 1.0
 var life: float = 0.0
+var base_volume: float = 0.0
+var volume: float:
+	get:
+		return base_volume * size * size * size
 var health: float = 100.0
 var movement_multiplier: float = 1.0
 var reach_multiplier: float = 1.0
@@ -47,14 +47,14 @@ var effective_acceleration: float:
 		return clampf(raw, 0.0, MAX_EFFECTIVE_ACCELERATION) if is_finite(raw) else acceleration
 var effective_drain_reach: float:
 	get:
-		var growth: float = size * size * size
-		var raw: float = (base_drain_reach + (growth - 1.0) * DRAIN_REACH_PER_SIZE) * reach_multiplier
-		return clampf(raw, 0.0, MAX_EFFECTIVE_DRAIN_REACH) if is_finite(raw) else base_drain_reach
+		var raw: float = base_drain_reach * size * reach_multiplier
+		return maxf(raw, 0.0) if is_finite(raw) else base_drain_reach
 var effective_drain_rate: float:
 	get:
-		var growth: float = size * size * size
-		var raw: float = base_drain_rate * (1.0 + (growth - 1.0) * DRAIN_RATE_PER_SIZE) * rate_multiplier
-		return clampf(raw, 0.0, MAX_EFFECTIVE_DRAIN_RATE) if is_finite(raw) else base_drain_rate
+		var seconds: float = base_collapse_seconds if is_finite(base_collapse_seconds) and base_collapse_seconds > 0.0 else 2.0
+		var base_rate: float = Scaling.life_for_volume(base_volume) * (1.0 - Scaling.COLLAPSE_LIFE_SHARE) / seconds
+		var raw: float = base_rate * size * rate_multiplier
+		return maxf(raw, 0.0) if is_finite(raw) else base_rate
 @onready var camera: Camera3D = $CameraRig/SpringArm3D/Camera3D
 @onready var drain_area: Area3D = $DrainArea
 @onready var body_shape: CollisionShape3D = $CollisionShape3D
@@ -69,6 +69,9 @@ func _ready() -> void:
 	body_shape.shape = body_shape.shape.duplicate()
 	add_to_group(&"player")
 	health = max_health
+	base_volume = Scaling.volume($Visuals/Reaper.model_dimensions * global_basis.get_scale().abs())
+	assert(base_volume > 0.0, "Player requires positive model volume")
+	drain_area.collector = self
 	drain_area.life_absorbed.connect(gain_life)
 	drain_area.life_absorbed.connect(drain_audio.record_transfer)
 	drain_vfx.configure(collection_point)
@@ -120,9 +123,7 @@ func gain_life(amount: float) -> void:
 func _calculate_size() -> float:
 	var safe_life: float = life if is_finite(life) else 0.0
 	var maximum: float = maximum_size if is_finite(maximum_size) and maximum_size >= 1.0 else 1.0
-	var per_size: float = life_per_size if is_finite(life_per_size) and life_per_size > 0.0 else 1.0
-	# Life is volume, so the displayed size is the cube root of accumulated growth.
-	return clampf(pow(1.0 + maxf(0.0, safe_life / per_size), 1.0 / 3.0), 1.0, maximum)
+	return clampf(pow(1.0 + Scaling.growth_for_life(maxf(0.0, safe_life)) / base_volume, 1.0 / 3.0), 1.0, maximum)
 
 func _unhandled_input(event: InputEvent) -> void:
 	if not gameplay_enabled:
@@ -171,7 +172,7 @@ func _refresh_growth() -> void:
 	visuals.scale = Vector3.ONE * size
 	smoke.configure(size)
 	collection_point.position.y = 1.25 * size
-	drain_area.source_size = size
+	drain_area.source_volume = volume
 	drain_area.drain_rate = effective_drain_rate
 	drain_area.set_reach(effective_drain_reach)
 	camera_rig.target_size = size

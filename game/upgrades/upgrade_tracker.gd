@@ -3,8 +3,9 @@ extends Node
 
 const UpgradeDefinition = preload("res://game/upgrades/upgrade_definition.gd")
 const GAP_GROWTH: float = 1.2
+const Scaling = preload("res://game/draining/drain_scaling.gd")
 
-@export var thresholds: PackedFloat32Array = PackedFloat32Array([40.0, 100.0, 180.0, 280.0, 400.0])
+@export var growth_volume_thresholds: PackedFloat32Array = PackedFloat32Array([6.0, 18.0, 39.0, 66.0, 108.0, 162.0])
 @export var options: Array[UpgradeDefinition] = [
 	preload("res://game/upgrades/reach.tres"),
 	preload("res://game/upgrades/rate.tres"),
@@ -18,6 +19,7 @@ var _next_index: int = 0
 var _next_threshold: float = 0.0
 var _gap: float = 0.0
 var _configured: bool = false
+var _base_volume: float = 1.0
 
 var next_threshold: float:
 	get:
@@ -25,7 +27,9 @@ var next_threshold: float:
 		return _next_threshold
 
 
-func _ready() -> void:
+func configure(base_volume: float) -> void:
+	assert(not _configured and is_finite(base_volume) and base_volume > 0.0)
+	_base_volume = base_volume
 	_ensure_configured()
 
 
@@ -63,13 +67,14 @@ func _ensure_configured() -> void:
 	_configured = true
 	_base_thresholds.clear()
 	var previous: float = 0.0
-	for value: float in thresholds:
+	for growth_volume: float in growth_volume_thresholds:
+		var value: float = Scaling.life_for_growth(growth_volume * _base_volume)
 		if not is_finite(value) or value <= previous:
 			continue
 		_base_thresholds.append(value)
 		previous = value
 	if _base_thresholds.is_empty():
-		_base_thresholds = PackedFloat32Array([100.0, 300.0, 650.0, 1100.0, 1800.0, 2700.0])
+		_base_thresholds = PackedFloat32Array([Scaling.life_for_growth(_base_volume * 30.0)])
 	_next_index = 0
 	_next_threshold = _base_thresholds[0]
 	_gap = _base_thresholds[-1] - (_base_thresholds[-2] if _base_thresholds.size() > 1 else 0.0)

@@ -140,13 +140,10 @@ static func _buildings() -> Array[Dictionary]:
 				var direction: Vector2 = corners[corner]
 				var x: float = center.x + direction.x * ((X_STREETS[ix + 1] - X_STREETS[ix]) * 0.5 - BUILDING_INSET - dims.x * 0.5)
 				var z: float = center.y + direction.y * ((Z_STREETS[iz] - Z_STREETS[iz + 1]) * 0.5 - BUILDING_INSET - dims.z * 0.5)
-				var gate: float = _gate_for(dims.y, iz, index)
 				out.append({
 					"kind": kind,
 					"position": Vector2(x, z),
 					"dimensions": dims,
-					"capacity": _capacity_for(dims, gate, iz),
-					"gate": gate,
 					"yaw": _street_yaw(x, z, X_STREETS[ix], X_STREETS[ix + 1], Z_STREETS[iz], Z_STREETS[iz + 1]),
 					"district": _district_for(iz),
 					"index": index,
@@ -185,13 +182,10 @@ static func _append_infill_houses(buildings: Array[Dictionary], ix: int, iz: int
 		var yaw: float = _street_yaw(position.x, position.y, X_STREETS[ix], X_STREETS[ix + 1], Z_STREETS[iz], Z_STREETS[iz + 1])
 		if not _infill_candidate_clear(position, dims, yaw, buildings, ix, iz):
 			continue
-		var gate: float = 2.4 + float((house_index + candidate_index) % 3) * 0.3
 		var entry: Dictionary = {
 			"kind": kind,
 			"position": position,
 			"dimensions": dims,
-			"capacity": 90.0 + dims.x * dims.z * 0.8,
-			"gate": gate,
 			"yaw": yaw,
 			"district": _district_for(iz),
 			"index": index + house_index,
@@ -261,8 +255,6 @@ static func _police_station() -> Dictionary:
 		"kind": kind,
 		"position": Vector2(center.x - 22.0, center.y + 22.0),
 		"dimensions": dims,
-		"capacity": 700.0,
-		"gate": 10.0,
 		"yaw": PI,
 		"district": &"midrise",
 		"index": 999,
@@ -309,25 +301,6 @@ static func _fit_dimensions(kind: StringName, height: float) -> Vector3:
 		dims.x = minf(dims.x, MAX_FOOTPRINT)
 		dims.z = minf(dims.z, MAX_FOOTPRINT)
 	return dims
-
-static func _gate_for(height: float, iz: int, index: int) -> float:
-	if height >= 90.0:
-		return clampf(30.0 + (height - 90.0) * 0.5 + float(index % 4), 30.0, 60.0)
-	if iz >= 2:
-		return 22.0 + clampf((height - 55.0) * 0.3, 0.0, 12.0) + float(index % 3)
-	if iz == 1:
-		return 12.0 + clampf((height - 27.0) * 0.35, 0.0, 12.0) + float(index % 2)
-	return clampf(5.0 + (height - 14.0) * 0.28 + float(index % 3), 5.0, 10.0)
-
-static func _capacity_for(dims: Vector3, gate: float, iz: int) -> float:
-	var area: float = dims.x * dims.z
-	if dims.y >= 90.0:
-		return 3000.0 + (gate - 30.0) * 220.0 + area * 1.8
-	if iz >= 2:
-		return 1600.0 + (gate - 22.0) * 120.0 + area * 1.4
-	if iz == 1:
-		return 750.0 + (gate - 12.0) * 95.0 + area
-	return 220.0 + (gate - 5.0) * 65.0 + area * 0.5
 
 static func _district_for(iz: int) -> StringName:
 	if iz >= 2:
