@@ -4,6 +4,8 @@ signal tier_changed(tier: int)
 signal human_spawned(human: CharacterBody3D)
 
 const HumanScene: PackedScene = preload("res://game/humans/human.tscn")
+const FarmerScene: PackedScene = preload("res://game/demo/farmer_combat/farmer.tscn")
+const Farmer = preload("res://game/demo/farmer_combat/farmer.gd")
 
 @export_range(1, 30) var maximum_active: int = 16
 @export_range(1, 30) var early_population: int = 4
@@ -219,7 +221,6 @@ func _spawn_human() -> void:
 				break
 		if occupied:
 			continue
-		var human: CharacterBody3D = HumanScene.instantiate() as CharacterBody3D
 		var ranged_chance: float = ranged_fraction
 		if tier == 2:
 			ranged_chance = 0.7
@@ -227,15 +228,29 @@ func _spawn_human() -> void:
 			ranged_chance = city_ranged_fraction
 		elif tier == 4:
 			ranged_chance = downtown_ranged_fraction
-		if tier >= 1 and _random.randf() < ranged_chance:
-			_configure_ranged(human)
-		human.configure(_balancer)
-		human.configure_remains(get_parent() as Node3D, _ground_position)
-		if _region != null:
-			human.configure_region(_region, _zone, spawn_position)
-			human.home_leash = home_leash
-		add_child(human)
-		human.global_position = spawn_position
+		var ranged: bool = tier >= 1 and _random.randf() < ranged_chance
+		var rural_farmer: bool = _region != null and _zone in [&"field", &"approach"] and not ranged
+		var human: CharacterBody3D
+		if rural_farmer:
+			var farmer: Farmer = FarmerScene.instantiate() as Farmer
+			human = farmer
+			add_child(farmer)
+			farmer.global_position = spawn_position
+			var height_ratio: float = farmer.get_model_height() / float(_balancer.call(&"get_reference_model_height"))
+			farmer.set_minimum_player_volume(float(_balancer.get("base_volume")) * pow(height_ratio, 3.0))
+			farmer.configure_region(_region, spawn_position, home_leash)
+			farmer.configure(_balancer, get_parent() as Node3D)
+		else:
+			human = HumanScene.instantiate() as CharacterBody3D
+			if ranged:
+				_configure_ranged(human)
+			human.configure(_balancer)
+			human.configure_remains(get_parent() as Node3D, _ground_position)
+			if _region != null:
+				human.configure_region(_region, _zone, spawn_position)
+				human.home_leash = home_leash
+			add_child(human)
+			human.global_position = spawn_position
 		human.reset_physics_interpolation()
 		_humans.append(human)
 		_next_spawn = (index + 1) % _spawn_points.size()

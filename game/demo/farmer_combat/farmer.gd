@@ -6,7 +6,7 @@ signal endurance_changed(fraction: float)
 
 const DEPLETION_EFFECT: PackedScene = preload("res://game/draining/depletion_effect.tscn")
 const DEPLETION_SCRIPT = preload("res://game/draining/depletion_effect.gd")
-const Drainable = preload("res://game/draining/drainable.gd")
+const FarmerDrainable = preload("res://game/demo/farmer_combat/farmer_drainable.gd")
 const FarmerVisual = preload("res://game/demo/farmer_combat/farmer_visual.gd")
 const FarmerAudio = preload("res://game/demo/farmer_combat/farmer_audio.gd")
 
@@ -14,6 +14,7 @@ enum State { PURSUE, WINDUP, SWING, RECOVERY, DEFEATED }
 enum AttackType { OVERHEAD, HORIZONTAL }
 
 @export var move_speed: float = 3.0
+@export var required_player_volume: float = 0.0
 @export var attack_range: float = 2.0
 @export_range(0.0, 180.0, 1.0) var attack_arc_degrees: float = 110.0
 @export var damage: float = 20.0
@@ -44,12 +45,18 @@ var _consumed: bool = false
 var _reward_total: float = 0.0
 var _absorbed_total: float = 0.0
 var _effect: Node3D
+var _region: Node3D
+var _home_position: Vector3
+var _home_leash: float = 65.0
+var _returning: bool = false
+var _navigation: NavigationAgent3D
+var _target_left: float = 0.0
 
 var endurance: float:
 	get:
 		return drainable.drain_fraction() if is_instance_valid(drainable) else 0.0
 
-@onready var drainable: Drainable = $Drainable
+@onready var drainable: FarmerDrainable = $Drainable
 @onready var _visual: FarmerVisual = $Visual
 @onready var _audio: FarmerAudio = $Audio
 
@@ -58,11 +65,23 @@ func _ready() -> void:
 	if not _visual.configure():
 		push_error("Farmer visual failed to configure")
 	var scale_vector: Vector3 = global_basis.get_scale().abs()
+	drainable.required_player_volume = required_player_volume
 	drainable.configure_volume(_visual.body_dimensions * scale_vector)
 	drainable.emission_offset = Vector3(0.0, 1.1, 0.0)
 	drainable.emission_radius = 0.4
 	drainable.collapsed.connect(_on_collapsed)
 	drainable.drained.connect(_on_drained)
+
+
+func get_model_height() -> float:
+	return _visual.body_dimensions.y * global_basis.get_scale().abs().y
+
+
+func set_minimum_player_volume(minimum: float) -> void:
+	if not is_finite(minimum) or minimum <= 0.0:
+		return
+	required_player_volume = minimum
+	drainable.required_player_volume = minimum
 
 
 func configure(target_player: CharacterBody3D, remains_parent: Node3D) -> void:
@@ -79,12 +98,25 @@ func configure(target_player: CharacterBody3D, remains_parent: Node3D) -> void:
 	endurance_changed.emit(endurance)
 
 
+func configure_region(region: Node3D, home: Vector3, leash: float) -> void:
+	_region = region
+	_home_position = home
+	_home_leash = leash
+	_returning = false
+	_target_left = 0.0
+	if _navigation == null:
+		_navigation = NavigationAgent3D.new()
+		_navigation.name = "NavigationAgent3D"
+		_navigation.path_desired_distance = 0.7
+		_navigation.target_desired_distance = 0.7
+		_navigation.path_max_distance = 4.0
+		_navigation.radius = 0.35
+		add_child(_navigation)
+
+
 func stop() -> void:
 	_active = false
-	_cancel_attack()
-	if is_instance_valid(_audio):
-		_audio.stop_swing()
-	velocity = Vector3.ZERO
+	cancel_attack()
 	if is_instance_valid(_visual):
 		_visual.update_pose(0.0, 0.0, 0.0, 0.0)
 
@@ -96,9 +128,27 @@ func _physics_process(delta: float) -> void:
 		stop()
 		return
 	if not _player_gameplay_enabled():
-		_cancel_attack()
+		cancel_attack()
 		_visual.update_pose(0.0, 0.0, 0.0, 0.0)
 		return
+	if _region != null:
+		if not bool(_region.get("navigation_ready")):
+			return
+		if _flat(_combat_target(_home_position) - _home_position).length() > _home_leash or global_position.distance_to(_home_position) > _home_leash:
+			if not _returning:
+				_target_left = 0.0
+			_returning = true
+		if _returning:
+			cancel_attack()
+			if global_position.distance_to(_home_position) < 2.0:
+				stop()
+				queue_free()
+				return
+			var direction: Vector3 = _navigate(_home_position, delta)
+			_face(direction, delta)
+			_move(direction * move_speed, delta)
+			_visual.update_pose(0.0 if direction.is_zero_approx() else 1.0, 0.0, 0.0, delta)
+			return
 	match state:
 		State.PURSUE:
 			_tick_pursue(delta)
@@ -118,13 +168,28 @@ func _tick_pursue(delta: float) -> void:
 		_begin_windup()
 		return
 	if distance > attack_range * 0.92 and not offset.is_zero_approx():
-		var direction: Vector3 = offset.normalized()
+		var direction: Vector3 = _navigate(target, delta) if _region != null else offset.normalized()
 		_face(direction, delta)
 		_move(direction * move_speed, delta)
 		_visual.update_pose(1.0, 0.0, 0.0, delta)
 		return
 	_move(Vector3.ZERO, delta)
 	_visual.update_pose(0.0, 0.0, 0.0, delta)
+
+
+func _navigate(destination: Vector3, delta: float) -> Vector3:
+	var map: RID = _navigation.get_navigation_map()
+	if NavigationServer3D.map_get_iteration_id(map) == 0:
+		return Vector3.ZERO
+	_target_left -= delta
+	if _target_left <= 0.0:
+		destination.y = float(_region.call("ground_height", destination.x, destination.z))
+		_navigation.target_position = destination
+		_target_left = 0.35
+	var next: Vector3 = _navigation.get_next_path_position()
+	if _navigation.is_navigation_finished():
+		return Vector3.ZERO
+	return _flat(next - global_position).normalized()
 
 
 func _tick_windup(delta: float) -> void:
@@ -256,16 +321,18 @@ func _face(direction: Vector3, delta: float) -> void:
 	_visual.rotation.y = lerp_angle(_visual.rotation.y, desired, 1.0 - exp(-10.0 * delta))
 
 
-func _cancel_attack() -> void:
+func cancel_attack() -> void:
 	state = State.DEFEATED if _defeated else State.PURSUE
 	_state_left = 0.0
 	_hit_applied = false
 	velocity = Vector3.ZERO
+	if is_instance_valid(_audio):
+		_audio.stop_swing()
 
 
 func _notification(what: int) -> void:
 	if what == NOTIFICATION_PAUSED:
-		_cancel_attack()
+		cancel_attack()
 
 
 func _player_available() -> bool:
@@ -297,8 +364,9 @@ func _warn_if_source_too_small() -> void:
 	if not _player_available():
 		return
 	var source_volume: Variant = player.get("volume")
-	if source_volume is float and drainable.required_volume > 0.0 and float(source_volume) < drainable.required_volume:
-		push_warning("Farmer drain gate: starting player volume %.3f is below required %.3f" % [float(source_volume), drainable.required_volume])
+	var minimum: float = drainable.get_minimum_player_volume()
+	if required_player_volume <= 0.0 and source_volume is float and float(source_volume) < minimum:
+		push_warning("Farmer drain gate: starting player volume %.3f is below required %.3f" % [float(source_volume), minimum])
 
 
 func _on_drained(_amount: float) -> void:

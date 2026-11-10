@@ -29,7 +29,7 @@ func _physics_process(delta: float) -> void:
 			eligible.append(target)
 	if eligible.is_empty():
 		return
-	var request: float = drain_rate * delta / eligible.size()
+	var request: float = drain_rate * delta
 	var absorbed: float = 0.0
 	for target: Drainable in eligible:
 		if not enabled:

@@ -3,6 +3,8 @@ extends Node3D
 const UpgradeDefinition = preload("res://game/upgrades/upgrade_definition.gd")
 const Tracker = preload("res://game/upgrades/upgrade_tracker.gd")
 const GameplaySfx = preload("res://game/run/gameplay_sfx.gd")
+const HitFeedback = preload("res://game/ui/hit_feedback.gd")
+const PhaseController = preload("res://game/balancer/phase_controller.gd")
 
 enum State { RUNNING, PAUSED, CHOOSING, FAILED, REBIRTH, FINISHED }
 
@@ -21,6 +23,11 @@ var state: State = State.RUNNING
 var _guidance_elapsed: float = 0.0
 var _resolution_pending: bool = false
 var _retry_pending: bool = false
+var _opening: Node3D
+var _opening_started: bool = false
+var _escalation_started: bool = false
+var _previous_health: float = 0.0
+var _hit_feedback: HitFeedback
 
 @onready var balancer: CharacterBody3D = $Balancer
 @onready var human_director: Node3D = $HumanDirector
@@ -37,6 +44,17 @@ func _enter_tree() -> void:
 func _ready() -> void:
 	get_tree().paused = false
 	assert(region != null, "Run requires an injected region")
+	_previous_health = balancer.health
+	_hit_feedback = HitFeedback.new()
+	_hit_feedback.name = "HitFeedback"
+	add_child(_hit_feedback)
+	_hit_feedback.configure(balancer.get_node("CameraRig/SpringArm3D/Camera3D") as Camera3D)
+	if region.has_method(&"get_opening_encounter"):
+		_opening = region.call(&"get_opening_encounter") as Node3D
+	if _opening != null:
+		_opening.completed.connect(_on_opening_completed)
+		_opening.endurance_changed.connect(interface.update_endurance)
+		_opening.status_changed.connect(interface.set_opening_status)
 	if place_player_at_region_spawn:
 		balancer.global_position = region.get_player_spawn()
 		balancer.reset_physics_interpolation()
@@ -62,14 +80,11 @@ func _ready() -> void:
 	_on_health_changed(balancer.health, balancer.max_health)
 	_on_growth_changed(balancer.life, balancer.size)
 	_on_progress_changed(region.drained_capacity, region.initial_capacity)
-	human_director.start()
 	if civilian_population != null:
 		civilian_population.configure(region, balancer)
 		civilian_population.start()
 	if city_traffic != null:
 		city_traffic.call(&"start")
-	if tank_director != null:
-		tank_director.call(&"start")
 	if demo_guidance:
 		_update_location()
 	_enable_initial_gameplay.call_deferred()
@@ -82,6 +97,8 @@ func _configure_city_managers() -> void:
 		tank_director.call(&"configure", region, balancer)
 
 func _process(delta: float) -> void:
+	if state == State.RUNNING and not get_tree().paused:
+		_refresh_phase()
 	if not demo_guidance or state != State.RUNNING or get_tree().paused:
 		return
 	_guidance_elapsed += delta
@@ -90,6 +107,9 @@ func _process(delta: float) -> void:
 		_update_location()
 
 func _update_location() -> void:
+	if _opening != null and not bool(_opening.get(&"is_completed")):
+		interface.update_location("Farm", "Gather wheat life. Fully consume the farmer to open the northern gate.")
+		return
 	match region.get_zone_at(balancer.global_position):
 		&"field":
 			interface.update_location("Southern fields", "Gather life among the hedgerows. Follow the road north toward the village.")
@@ -105,6 +125,34 @@ func _update_location() -> void:
 func _enable_initial_gameplay() -> void:
 	if state == State.RUNNING and not _retry_pending:
 		balancer.set_gameplay_enabled(true)
+		_start_opening()
+		_queue_resolution()
+
+func _start_opening() -> void:
+	if _opening == null or _opening_started:
+		return
+	_opening_started = true
+	_opening.call(&"configure", balancer)
+	_opening.call(&"start")
+
+func _on_opening_completed() -> void:
+	interface.hide_endurance()
+	_queue_resolution()
+
+func _start_escalation() -> void:
+	if _escalation_started or balancer.health <= 0.0 or state != State.RUNNING or get_tree().paused or _retry_pending:
+		return
+	if _opening != null and (not _opening_started or not bool(_opening.get(&"is_completed"))):
+		return
+	_escalation_started = true
+	human_director.start()
+	if tank_director != null:
+		tank_director.call(&"start")
+
+func _refresh_phase() -> void:
+	var phase: PhaseController = balancer.phase_controller
+	if phase != null:
+		interface.update_phase(phase.is_phase_ready(), phase.get_cooldown_remaining(), phase.get_cooldown_duration(), phase.is_travelling())
 
 func _notification(what: int) -> void:
 	if what == NOTIFICATION_APPLICATION_FOCUS_OUT and is_node_ready():
@@ -119,7 +167,11 @@ func _unhandled_input(event: InputEvent) -> void:
 		get_viewport().set_input_as_handled()
 
 func _on_health_changed(current: float, maximum: float) -> void:
+	var took_damage: bool = current < _previous_health
+	_previous_health = current
 	interface.update_health(current, maximum)
+	if took_damage and state == State.RUNNING and not get_tree().paused:
+		_hit_feedback.play_hit()
 	_queue_resolution()
 
 func _on_growth_changed(life: float, size: float) -> void:
@@ -153,11 +205,14 @@ func _resolve_update() -> void:
 		return
 	if upgrades.has_pending():
 		state = State.CHOOSING
+		_hit_feedback.cancel()
 		balancer.set_gameplay_enabled(false)
 		get_tree().paused = true
 		interface.show_upgrade_choices(upgrades.options, upgrades.pending_rewards)
 	elif get_tree().paused:
 		_enter_running()
+	else:
+		_start_escalation()
 
 func _on_upgrade_selected(definition: UpgradeDefinition) -> void:
 	if state != State.CHOOSING or definition == null or not upgrades.options.has(definition):
@@ -193,6 +248,7 @@ func _on_pause_requested() -> void:
 	if state != State.RUNNING:
 		return
 	state = State.PAUSED
+	_hit_feedback.cancel()
 	balancer.set_gameplay_enabled(false)
 	get_tree().paused = true
 	interface.show_pause()
@@ -209,6 +265,8 @@ func _enter_running() -> void:
 	interface.hide_overlays()
 	get_tree().paused = false
 	balancer.set_gameplay_enabled(true)
+	_start_opening()
+	_start_escalation()
 
 func _fail_run() -> void:
 	state = State.FAILED
@@ -243,6 +301,9 @@ func _on_retry_requested() -> void:
 	_reload_run.call_deferred()
 
 func _stop_managers() -> void:
+	_hit_feedback.cancel()
+	if _opening != null:
+		_opening.call(&"stop")
 	human_director.stop()
 	if civilian_population != null:
 		civilian_population.stop()

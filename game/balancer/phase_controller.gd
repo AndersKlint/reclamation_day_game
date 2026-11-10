@@ -16,6 +16,8 @@ const PhaseAudio = preload("res://game/balancer/phase_audio.gd")
 
 var _state: State = State.READY
 var _travel_remaining: float = 0.0
+var _body_size: float = 1.0
+var _travel_velocity: Vector3 = Vector3.ZERO
 var _cooldown_remaining: float = 0.0
 var _direction: Vector3 = Vector3.ZERO
 var _reaper: Node3D
@@ -32,8 +34,14 @@ func _ready() -> void:
 	_audio.name = "PhaseAudio"
 	add_child(_audio)
 
-func bind(reaper: Node3D) -> void:
+func bind(reaper: Node3D, body_size: float) -> void:
 	_reaper = reaper
+	set_body_size(body_size)
+
+func set_body_size(body_size: float) -> void:
+	_body_size = maxf(body_size, 0.001) if is_finite(body_size) else 1.0
+	if _vfx != null:
+		_vfx.configure(_body_size)
 
 func try_activate(direction: Vector3) -> bool:
 	if _state != State.READY:
@@ -43,6 +51,7 @@ func try_activate(direction: Vector3) -> bool:
 		return false
 	_direction = flat.normalized()
 	_travel_remaining = maxf(travel_time, 0.001)
+	_travel_velocity = _direction * (maxf(travel_distance, 0.0) * _body_size / _travel_remaining)
 	_state = State.TRAVELLING
 	_begin_presentation()
 	if _audio != null:
@@ -73,6 +82,8 @@ func cancel() -> void:
 		_travel_remaining = 0.0
 		_direction = Vector3.ZERO
 		_finish_travel()
+	if _vfx != null:
+		_vfx.clear()
 
 func is_travelling() -> bool:
 	return _state == State.TRAVELLING
@@ -93,7 +104,7 @@ func get_travel_remaining() -> float:
 	return _travel_remaining
 
 func get_travel_velocity() -> Vector3:
-	return _direction * (maxf(travel_distance, 0.0) / maxf(travel_time, 0.001))
+	return _travel_velocity
 
 func get_cooldown_remaining() -> float:
 	return _cooldown_remaining

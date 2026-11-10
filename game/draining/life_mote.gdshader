@@ -2,7 +2,6 @@ shader_type spatial;
 render_mode unshaded, cull_disabled, depth_draw_never, blend_mix;
 
 uniform vec4 dark_color = vec4(0.0, 0.0, 0.0, 1.0);
-uniform vec4 red_color = vec4(0.95, 0.04, 0.03, 1.0);
 uniform vec4 white_color = vec4(1.0, 1.0, 1.0, 1.0);
 uniform float emission_strength : hint_range(0.0, 8.0, 0.1) = 3.0;
 uniform float size_scale : hint_range(0.1, 160.0, 0.5) = 1.0;
@@ -47,9 +46,8 @@ void fragment() {
 
 	float mask = 1.0 - smoothstep(0.94 - edge_aa, 1.0 + edge_aa, radius);
 	float palette = fract(mote.y * 7.13 + mote.z * 3.71);
-	vec3 particle_color = palette < 0.3333 ? dark_color.rgb
-		: (palette < 0.6666 ? red_color.rgb : white_color.rgb);
-	particle_color = mix(particle_color, vec3(mix(0.01, 0.07, coarse)), 1.0 - step(0.3333, palette));
+	vec3 particle_color = palette < 0.5 ? dark_color.rgb : white_color.rgb;
+	particle_color = mix(particle_color, vec3(mix(0.01, 0.07, coarse)), 1.0 - step(0.5, palette));
 
 	float glow = mix(0.35, 1.0, 1.0 - smoothstep(0.0, 1.0, radius));
 	vec3 tinted = particle_color * glow * mix(0.55, 1.0, coarse) * mix(0.85, 1.0, grain);

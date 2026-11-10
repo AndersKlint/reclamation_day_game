@@ -1,4 +1,4 @@
-[gd_scene load_steps=14 format=3]
+[gd_scene load_steps=15 format=3]
 
 [ext_resource type="Script" path="res://game/run/run.gd" id="1"]
 [ext_resource type="PackedScene" path="res://game/demo/world/demo_region.tscn" id="2"]
@@ -13,6 +13,7 @@
 [ext_resource type="Script" path="res://game/demo/world/ground_scorch.gd" id="11_scorch"]
 [ext_resource type="Script" path="res://game/demo/city/city_traffic.gd" id="12_traffic"]
 [ext_resource type="Script" path="res://game/enemies/tank_director.gd" id="13_tank"]
+[ext_resource type="Script" path="res://game/balancer/phase_controller.gd" id="14_phase"]
 
 [node name="DemoRun" type="Node3D" node_paths=PackedStringArray("region", "civilian_population", "city_traffic", "tank_director")]
 process_mode = 3
@@ -41,9 +42,18 @@ script = ExtResource("13_tank")
 process_mode = 1
 ground_scorch = NodePath("../GroundScorch")
 
-[node name="Balancer" parent="." instance=ExtResource("3")]
+[node name="Balancer" parent="." node_paths=PackedStringArray("phase_controller") instance=ExtResource("3")]
 process_mode = 1
+initial_size = 0.5
+base_movement_speed = 6.0
+acceleration = 24.0
+movement_reference_height = 3.8
+drain_rate_per_scale = 0.051
 maximum_size = 1000.0
+phase_controller = NodePath("PhaseController")
+
+[node name="PhaseController" type="Node3D" parent="Balancer"]
+script = ExtResource("14_phase")
 
 [node name="CameraRig" parent="Balancer" index="6"]
 base_far = 1500.0

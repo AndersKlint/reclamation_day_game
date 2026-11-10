@@ -15,6 +15,12 @@ var _growth_label: Label
 var _progress_label: Label
 var _progress_bar: ProgressBar
 var _location_label: Label
+var _phase_label: Label
+var _phase_bar: ProgressBar
+var _endurance_label: Label
+var _endurance_bar: ProgressBar
+var _opening_status: Label
+var _controls_label: Label
 var _overlay: ColorRect
 var _menu: VBoxContainer
 
@@ -50,6 +56,15 @@ func _ready() -> void:
 	_progress_bar = _bar(stats)
 	_location_label = _label(stats, "")
 	_location_label.hide()
+	_phase_label = _label(stats, "")
+	_phase_bar = _bar(stats)
+	_phase_label.hide()
+	_phase_bar.hide()
+	_endurance_label = _label(stats, "")
+	_endurance_bar = _bar(stats)
+	hide_endurance()
+	_opening_status = _label(stats, "")
+	_opening_status.hide()
 	var spacer := Control.new()
 	spacer.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	spacer.size_flags_vertical = Control.SIZE_EXPAND_FILL
@@ -58,8 +73,8 @@ func _ready() -> void:
 	var footer := HBoxContainer.new()
 	footer.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	column.add_child(footer)
-	var controls := _label(footer, "Mouse · Orbit     WASD / arrows · Move     Esc · Pause / cursor")
-	controls.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_controls_label = _label(footer, "Mouse · Orbit     WASD / arrows · Move     Esc · Pause / cursor")
+	_controls_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	_button(footer, "Pause", func() -> void: pause_requested.emit())
 	_overlay = ColorRect.new()
 	_overlay.name = "Overlay"
@@ -111,6 +126,39 @@ func update_location(title: String, detail: String) -> void:
 	_location_label.show()
 
 
+func update_phase(ready: bool, remaining: float, duration: float, travelling: bool) -> void:
+	_controls_label.text = "Mouse · Orbit     WASD / arrows · Move     Space · Phase     Esc · Pause / cursor"
+	_phase_label.show()
+	_phase_bar.show()
+	if ready:
+		_phase_label.text = "PHASE  READY · Space"
+		_phase_bar.value = 1.0
+	elif travelling:
+		_phase_label.text = "PHASE  TRAVELLING"
+		_phase_bar.value = 0.0
+	else:
+		_phase_label.text = "PHASE  %.1fs" % maxf(remaining, 0.0)
+		_phase_bar.value = 1.0 - clampf(remaining / duration, 0.0, 1.0) if duration > 0.0 else 0.0
+
+
+func update_endurance(fraction: float) -> void:
+	var value: float = clampf(fraction, 0.0, 1.0)
+	_endurance_label.text = "FARMER ENDURANCE  %d%%" % roundi(value * 100.0)
+	_endurance_bar.value = value
+	_endurance_label.show()
+	_endurance_bar.show()
+
+
+func hide_endurance() -> void:
+	_endurance_label.hide()
+	_endurance_bar.hide()
+
+
+func set_opening_status(text: String) -> void:
+	_opening_status.text = text
+	_opening_status.visible = not text.is_empty()
+
+
 func show_upgrade_choices(definitions: Array[UpgradeDefinition], pending_count: int = 1) -> void:
 	_clear_menu()
 	_label(_menu, "The shadow deepens", 28)
@@ -137,7 +185,8 @@ func show_upgrade_choices(definitions: Array[UpgradeDefinition], pending_count: 
 func show_pause() -> void:
 	_clear_menu()
 	_label(_menu, "A moment of stillness", 28)
-	_label(_menu, "Mouse to look / orbit. WASD / arrows move relative to the camera.\nThe Balancer turns toward movement. Nearby life drains automatically.\nEsc pauses and releases the cursor; Esc or Resume returns to play.\nGrow before approaching larger life.")
+	var phase_controls: String = "\nSpace phases in the movement direction, avoiding damage during travel." if _phase_label.visible else ""
+	_label(_menu, "Mouse to look / orbit. WASD / arrows move relative to the camera.\nThe Balancer turns toward movement. Nearby life drains automatically." + phase_controls + "\nEsc pauses and releases the cursor; Esc or Resume returns to play.\nGrow before approaching larger life.")
 	var resume := _button(_menu, "Resume", func() -> void: _emit_menu_request(resume_requested))
 	_button(_menu, "Retry region", func() -> void: _emit_menu_request(retry_requested))
 	_overlay.show()
@@ -189,7 +238,7 @@ func _format_amount(value: float) -> String:
 		return "—"
 	var magnitude: float = absf(value)
 	if magnitude > 0.0 and magnitude < 0.01:
-		return "%.2e" % value
+		return String.num_scientific(value)
 	if magnitude < 10.0:
 		return "%.2f" % value
 	if magnitude < 10_000.0:
@@ -200,7 +249,7 @@ func _format_amount(value: float) -> String:
 		return "%.2fM" % (value / 1_000_000.0)
 	if magnitude < 1_000_000_000_000.0:
 		return "%.2fB" % (value / 1_000_000_000.0)
-	return "%.2e" % value
+	return String.num_scientific(value)
 
 
 func _emit_menu_request(request: Signal) -> void:

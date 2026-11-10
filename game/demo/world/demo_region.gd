@@ -9,11 +9,13 @@ const Forest = preload("res://game/demo/world/forest_assets.gd")
 const CoverPatch = preload("res://game/demo/world/cover_patch.gd")
 const CityBuilder = preload("res://game/demo/city/city_builder.gd")
 const CityLayout = preload("res://game/demo/city/city_layout.gd")
+const FARM_OPENING: PackedScene = preload("res://game/demo/farm_opening/farm_opening.tscn")
+const FARM_CENTER: Vector2 = Vector2(0.0, 280.0)
 const COVER_FADE_SHADER: Shader = preload("res://game/demo/world/ground_cover_fade.gdshader")
 const GROUND = preload("res://available-assets/retro3d-assets/Buildings/Abandoned House/Textures/groundgrass.png")
 const GRASS = preload("res://available-assets/retro3d-assets/Nature/Materials/grass_bush_1.png")
 const STEP: float = 4.0
-const WORLD_BOUNDS: Rect2 = Rect2(Vector2(-280.0, -780.0), Vector2(560.0, 1030.0))
+const WORLD_BOUNDS: Rect2 = Rect2(Vector2(-280.0, -780.0), Vector2(560.0, 1160.0))
 const CITY_EDGE: float = -190.0
 const DOWNTOWN_EDGE: float = -460.0
 const BUILDINGS: Array[Vector3] = [
@@ -54,6 +56,7 @@ var _pedestrian_points: Array[Vector3] = []
 var _traffic_routes: Array[PackedVector3Array] = []
 var _tank_routes: Array[PackedVector3Array] = []
 var _city_parking: Array[Transform3D] = []
+var _opening_encounter: Node3D
 
 func _ready() -> void:
 	_rng.seed = 30102026
@@ -67,6 +70,7 @@ func _ready() -> void:
 	_build_settlement()
 	_build_resources()
 	_build_margins()
+	_build_farm_opening()
 	_build_spawns()
 	_build_grass()
 	Forest.populate(self, _decoration)
@@ -106,7 +110,31 @@ func get_city_parking() -> Array[Transform3D]:
 	return _city_parking.duplicate()
 
 func get_player_spawn() -> Vector3:
-	return to_global(Vector3(0.0, ground_height(0.0, 130.0), 130.0))
+	return to_global(Vector3(FARM_CENTER.x, ground_height(FARM_CENTER.x, FARM_CENTER.y), FARM_CENTER.y))
+
+func get_opening_encounter() -> Node3D:
+	return _opening_encounter
+
+func _build_farm_opening() -> void:
+	_opening_encounter = FARM_OPENING.instantiate() as Node3D
+	_opening_encounter.position = Vector3(FARM_CENTER.x, 0.0, FARM_CENTER.y)
+	_opening_encounter.prepare(_farm_ground_height)
+	add_child(_opening_encounter)
+	initial_capacity += float(_opening_encounter.initial_wheat_capacity) + float(_opening_encounter.initial_fence_capacity)
+	_opening_encounter.wheat.life_absorbed.connect(_on_drained)
+	_opening_encounter.fence_life_absorbed.connect(_on_drained)
+	for ring: int in 3:
+		var half: float = 56.0 + ring * 8.0
+		for offset: int in range(-int(half), int(half) + 1, 7):
+			for side: float in [-1.0, 1.0]:
+				var p: Vector2 = FARM_CENTER + Vector2(offset, side * half)
+				if not _on_road(p, 6.0):
+					_scenery(StringName("forest_tree%d" % (1 + posmod(offset + ring, 4))), p, Vector3(9.0, 14.0 + ring * 2.0, 9.0))
+				p = FARM_CENTER + Vector2(side * half, offset)
+				_scenery(StringName("forest_tree%d" % (1 + posmod(offset + ring + 1, 4))), p, Vector3(9.0, 14.0 + ring * 2.0, 9.0))
+
+func _farm_ground_height(x: float, z: float) -> float:
+	return ground_height(x + FARM_CENTER.x, z + FARM_CENTER.y)
 
 func get_zone_at(world_position: Vector3) -> StringName:
 	var z: float = to_local(world_position).z
@@ -140,7 +168,9 @@ func _height_sample(x: float, z: float) -> float:
 		height = lerpf(0.5, height, smoothstep(0.0, 9.0, distance))
 	var city_blend: float = 1.0 - smoothstep(-210.0, -150.0, z)
 	height = lerpf(height, 0.5, city_blend)
-	var margin: float = maxf(absf(x) - 245.0, maxf(z - 220.0, -800.0 - z))
+	var farm_distance: float = maxf(absf(x - FARM_CENTER.x) - 52.0, absf(z - FARM_CENTER.y) - 52.0)
+	height = lerpf(0.5, height, smoothstep(0.0, 16.0, farm_distance))
+	var margin: float = maxf(absf(x) - 245.0, maxf(z - 350.0, -800.0 - z))
 	return height + smoothstep(0.0, 65.0, margin) * (14.0 + 5.0 * sin(x * 0.031 + z * 0.019))
 
 func ground_height(x: float, z: float) -> float:
@@ -199,12 +229,14 @@ func _build_terrain() -> void:
 	_landscape.add_child(body)
 
 func _lane_x(z: float) -> float:
+	if z > 170.0:
+		return lerpf(sin(170.0 * 0.021) * 13.0, 0.0, smoothstep(170.0, 232.0, z))
 	return sin(maxf(z, 0.0) * 0.021) * 13.0 * smoothstep(-20.0, 40.0, z)
 
 func _build_roads() -> void:
 	var dirt: StandardMaterial3D = _material(Color(0.29, 0.25, 0.19), GROUND)
 	var points: Array[Vector2] = []
-	for z: int in range(-190, 171, 2):
+	for z: int in range(-190, 241, 2):
 		points.append(Vector2(_lane_x(z), z))
 	_ribbon(points, 7.0, dirt, "MainLane")
 	for z: float in [-18.0, -58.0, -100.0, -156.0]:
@@ -398,7 +430,9 @@ func _build_margins() -> void:
 			var x: float = side * _rng.randf_range(133, 180)
 			_scenery(&"pine" if i % 3 == 0 else StringName("forest_tree%d" % (1 + i % 4)), Vector2(x, z), Vector3(12, _rng.randf_range(14, 23), 12))
 	for i: int in 30:
-		_scenery(&"pine", Vector2(-175 + i * 11.5, 185 + _rng.randf_range(0, 30)), Vector3(13, _rng.randf_range(16, 25), 13))
+		var p: Vector2 = Vector2(-175 + i * 11.5, 185 + _rng.randf_range(0, 30))
+		if not _on_road(p, 7.0):
+			_scenery(&"pine", p, Vector3(13, _rng.randf_range(16, 25), 13))
 	for i: int in 60:
 		var p: Vector2 = Vector2(-178 + i * 6.0, -769.0 + _rng.randf_range(-2.0, 2.0))
 		if not _on_road(p, 4.0):
@@ -408,7 +442,7 @@ func _build_margins() -> void:
 		_scenery(&"rock", Vector2(side * _rng.randf_range(112, 144), _rng.randf_range(-166, 167)), Vector3(3, 2, 3))
 
 func _on_road(p: Vector2, clearance: float = 3.0) -> bool:
-	if absf(p.x - _lane_x(p.y)) < 7.0 + clearance:
+	if p.y <= 240.0 and absf(p.x - _lane_x(p.y)) < 7.0 + clearance:
 		return true
 	if p.y < 35:
 		if absf(p.x + 94.0) < 4.0 + clearance or absf(p.x - 95.0) < 4.0 + clearance:
@@ -426,6 +460,8 @@ func _on_road(p: Vector2, clearance: float = 3.0) -> bool:
 	return false
 
 func _clear_route(p: Vector2) -> bool:
+	if Rect2(FARM_CENTER - Vector2(48.0, 48.0), Vector2(96.0, 96.0)).has_point(p):
+		return true
 	if _on_road(p):
 		return true
 	for marker: Node3D in _spawn_points:
@@ -519,7 +555,7 @@ func _finish_cover() -> void:
 func _build_spawns() -> void:
 	var player: Marker3D = Marker3D.new()
 	player.name = "PlayerSpawn"
-	player.position = Vector3(0, ground_height(0, 130), 130)
+	player.position = Vector3(FARM_CENTER.x, ground_height(FARM_CENTER.x, FARM_CENTER.y), FARM_CENTER.y)
 	add_child(player)
 	for p: Vector2 in [Vector2(-95, 145), Vector2(95, 125), Vector2(-95, 65), Vector2(95, 48), Vector2(-94, 26), Vector2(94, 22), Vector2(-94, -16), Vector2(94, -16), Vector2(-94, -58), Vector2(94, -58), Vector2(-94, -100), Vector2(94, -100), Vector2(-94, -156), Vector2(94, -156), Vector2(0, -158)]:
 		_add_spawn(p)

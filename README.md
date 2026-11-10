@@ -2,7 +2,7 @@
 
 A dark 3D solo demo about the Balancer, a melancholy spirit that appears at Earth's environmental tipping point. Drain the life around it, grow from a shadow into an overwhelming presence, survive human resistance, and return the accumulated life as new growth.
 
-The current demo is one seamless region running north from southern fields and an orchard/farm approach, through a village, and into a city. The city adds towers, parks, police, tanks, parked cars, and traffic. It is freely accessible; local resistance, not a gate, makes it dangerous. Play is mouse-orbit third person with automatic draining. Full UI, menu, and audio polish is later.
+The current demo begins inside an enclosed wheatfield. Gather wheat life; a farmer arrives after 30 seconds of active play. Grow enough to drain the farmer, break his endurance, then stay close until he is fully consumed to open the farm gate. The same run continues north through an orchard/farm approach, a village, and a city with towers, parks, police, tanks, parked cars, and traffic. Beyond the farm, local resistance rather than further gates supplies danger. Play is mouse-orbit third person with automatic draining. Full UI, menu, and audio polish is later.
 
 ## Play
 
@@ -29,11 +29,13 @@ Wheat drains automatically. Break the farmer's endurance, then stay close until 
 - **Mouse:** orbit the third-person camera.
 - **WASD / arrows:** camera-relative movement; the Balancer turns toward movement. No jump or sprint.
 - **Esc:** pause/resume and release/recapture the cursor. Menus use the mouse or keyboard focus; retry is available from pause and result screens.
-- **Space:** phase forward a short distance in the farmer combat demo; brief invulnerability, then a cooldown.
+- **Space:** phase a short distance in the movement direction (or facing direction while still), with brief invulnerability followed by a cooldown. Available throughout the main demo and in the farmer combat demo.
 - **Period / comma:** debug-add / remove 500 life.
 - **Page Up / Page Down:** debug-add / remove 50,000 life.
 
-Nearby eligible life drains automatically. Drain smaller life first to grow large enough for larger targets. At growth thresholds, choose an upgrade; the UI can apply one upgrade type to all currently queued rewards. Humans and tanks grant growth but do not count toward the finite objective. Drain 90% of the placed world life to trigger the renewal ending, which ends the run; losing all health also ends it. Debug life reduction does not revoke or re-award upgrade tiers already earned.
+Nearby eligible life drains automatically. Drain smaller life first to grow large enough for larger targets. At growth thresholds, choose an upgrade; the UI can apply one upgrade type to all currently queued rewards. The farmer, other humans, and tanks grant growth but do not count toward the finite objective; wheat and farm trees do count. Human and tank escalation begins after the farmer is consumed, without counting time spent in the opening. Opening the gate is not a separate victory. Drain 90% of the placed world life to trigger the renewal ending, which ends the run; losing all health also ends it. Debug life reduction does not revoke or re-award upgrade tiers already earned.
+
+Each eligible target receives the full hunger rate independently, not a shared budget. In the main demo, hunger is exactly `0.051 × model scale × hunger upgrade multiplier` life/s per target. Opening wheat converts one-third of the requested drain into life transfer, preserving its life rewards and withering timing: at starting scale 0.5, each patch takes about 10 active seconds to visibly wither; growth during draining can shorten this. Its remaining 80% life transfers over one further active second. Farmer drain efficiency is 0.03, reducing effective endurance without changing life rewards. Movement speed and acceleration scale with `sqrt(model scale / initial scale)` and the movement upgrade multiplier, without upper caps. Without upgrades, main-demo speed is about 1.824 m/s at spawn, 2.339 m/s at farmer height (1.9 m), and 3.308 m/s at twice farmer height (3.8 m).
 
 ## Presentation
 

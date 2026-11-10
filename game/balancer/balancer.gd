@@ -10,8 +10,6 @@ const PHYSICAL_SIZE_LIMIT: float = 3.0
 const Scaling = preload("res://game/draining/drain_scaling.gd")
 const WorldModel = preload("res://game/world/world_model.gd")
 const PhaseController = preload("res://game/balancer/phase_controller.gd")
-const MAX_EFFECTIVE_MOVEMENT_SPEED: float = 18.0
-const MAX_EFFECTIVE_ACCELERATION: float = 72.0
 const MAX_UPGRADE_MULTIPLIER: float = 1_000_000.0
 const MAX_ACCUMULATED_MULTIPLIER: float = 1_000_000.0
 const MAX_LIFE: float = 1_000_000_000_000_000_000_000_000_000_000.0
@@ -21,10 +19,12 @@ const BANK_RESPONSE: float = 6.0
 
 @export var base_movement_speed: float = 6.0
 @export var acceleration: float = 24.0
+@export_range(0.01, 1000.0, 0.01, "or_greater") var movement_reference_height: float = 2.31
 @export var turning_speed: float = 6.0
 @export var base_drain_reach: float = 2.8
-@export_range(0.1, 30.0) var base_collapse_seconds: float = 2.0
+@export_range(0.0, 1000.0, 0.001, "or_greater") var drain_rate_per_scale: float = 0.34
 @export var max_health: float = 100.0
+@export_range(0.1, 1000.0, 0.01) var initial_size: float = 1.0
 @export var maximum_size: float = 1000.0
 @export var phase_controller: PhaseController
 var gameplay_enabled: bool = false
@@ -44,22 +44,20 @@ var _absorption_bounds_ready: bool = false
 var _bank: float = 0.0
 var effective_movement_speed: float:
 	get:
-		var raw: float = base_movement_speed * movement_multiplier
-		return clampf(raw, 0.0, MAX_EFFECTIVE_MOVEMENT_SPEED) if is_finite(raw) else base_movement_speed
+		var raw: float = base_movement_speed * _movement_scale() * movement_multiplier
+		return maxf(raw, 0.0) if is_finite(raw) else 0.0
 var effective_acceleration: float:
 	get:
-		var raw: float = acceleration * maxf(1.0, sqrt(movement_multiplier))
-		return clampf(raw, 0.0, MAX_EFFECTIVE_ACCELERATION) if is_finite(raw) else acceleration
+		var raw: float = acceleration * _movement_scale() * movement_multiplier
+		return maxf(raw, 0.0) if is_finite(raw) else 0.0
 var effective_drain_reach: float:
 	get:
 		var raw: float = base_drain_reach * size * reach_multiplier
 		return maxf(raw, 0.0) if is_finite(raw) else base_drain_reach
 var effective_drain_rate: float:
 	get:
-		var seconds: float = base_collapse_seconds if is_finite(base_collapse_seconds) and base_collapse_seconds > 0.0 else 2.0
-		var base_rate: float = Scaling.life_for_volume(base_volume) * (1.0 - Scaling.COLLAPSE_LIFE_SHARE) / seconds
-		var raw: float = base_rate * size * rate_multiplier
-		return maxf(raw, 0.0) if is_finite(raw) else base_rate
+		var raw: float = drain_rate_per_scale * size * rate_multiplier
+		return maxf(raw, 0.0) if is_finite(raw) else 0.0
 @onready var camera: Camera3D = $CameraRig/SpringArm3D/Camera3D
 @onready var drain_area: Area3D = $DrainArea
 @onready var body_shape: CollisionShape3D = $CollisionShape3D
@@ -77,6 +75,8 @@ func _ready() -> void:
 	health = max_health
 	base_volume = Scaling.volume($Visuals/Reaper.model_dimensions * global_basis.get_scale().abs())
 	assert(base_volume > 0.0, "Player requires positive model volume")
+	initial_size = clampf(initial_size, 0.1, 1000.0) if is_finite(initial_size) else 1.0
+	size = _calculate_size()
 	drain_area.collector = self
 	drain_area.life_absorbed.connect(gain_life)
 	drain_area.life_absorbed.connect(drain_audio.record_transfer)
@@ -85,7 +85,7 @@ func _ready() -> void:
 	drain_area.transfer_effect_requested.connect(drain_vfx.record_transfer, CONNECT_DEFERRED)
 	_refresh_growth()
 	if phase_controller != null:
-		phase_controller.bind(reaper)
+		phase_controller.bind(reaper, size)
 	set_gameplay_enabled(false)
 
 func _physics_process(delta: float) -> void:
@@ -151,8 +151,8 @@ func gain_life(amount: float) -> void:
 
 func _calculate_size() -> float:
 	var safe_life: float = life if is_finite(life) else 0.0
-	var maximum: float = maximum_size if is_finite(maximum_size) and maximum_size >= 1.0 else 1.0
-	return clampf(pow(1.0 + Scaling.growth_for_life(maxf(0.0, safe_life)) / base_volume, 1.0 / 3.0), 1.0, maximum)
+	var maximum: float = maxf(initial_size, maximum_size) if is_finite(maximum_size) else initial_size
+	return clampf(pow(pow(initial_size, 3.0) + Scaling.growth_for_life(maxf(0.0, safe_life)) / base_volume, 1.0 / 3.0), initial_size, maximum)
 
 func _unhandled_input(event: InputEvent) -> void:
 	if not gameplay_enabled or Input.mouse_mode != Input.MOUSE_MODE_CAPTURED:
@@ -222,6 +222,8 @@ func apply_upgrade(effects: Dictionary[String, float]) -> void:
 func _refresh_growth() -> void:
 	visuals.scale = Vector3.ONE * size
 	smoke.configure(size)
+	if phase_controller != null:
+		phase_controller.set_body_size(size)
 	collection_point.position.y = 1.25 * size
 	drain_area.source_volume = volume
 	drain_area.drain_rate = effective_drain_rate
@@ -233,7 +235,7 @@ func _refresh_growth() -> void:
 
 func _apply_growth_geometry() -> void:
 	_geometry_update_pending = false
-	var physical_size: float = clampf(size, 1.0, PHYSICAL_SIZE_LIMIT) if is_finite(size) else 1.0
+	var physical_size: float = clampf(size, minf(initial_size, PHYSICAL_SIZE_LIMIT), PHYSICAL_SIZE_LIMIT) if is_finite(size) else minf(initial_size, PHYSICAL_SIZE_LIMIT)
 	var capsule: CapsuleShape3D = body_shape.shape as CapsuleShape3D
 	capsule.radius = COMBAT_RADIUS_PER_SIZE * physical_size
 	capsule.height = COMBAT_HEIGHT_PER_SIZE * physical_size
@@ -241,6 +243,20 @@ func _apply_growth_geometry() -> void:
 
 func get_collection_position() -> Vector3:
 	return collection_point.global_position
+
+func get_reference_model_height() -> float:
+	return reaper.model_dimensions.y * global_basis.get_scale().abs().y
+
+func _movement_scale() -> float:
+	if not is_finite(movement_reference_height) or movement_reference_height <= 0.0:
+		return 0.0
+	if not is_finite(initial_size) or initial_size <= 0.0 or not is_finite(size) or size < 0.0:
+		return 0.0
+	var reference_height: float = get_reference_model_height()
+	if not is_finite(reference_height) or reference_height <= 0.0:
+		return 0.0
+	var scale_factor: float = reference_height * initial_size / movement_reference_height * sqrt(size / initial_size)
+	return scale_factor if is_finite(scale_factor) else 0.0
 
 func get_absorption_transform() -> Transform3D:
 	return visuals.global_transform

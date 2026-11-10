@@ -1,8 +1,10 @@
 extends Node3D
 
 signal progress_changed(harvested: int, total: int)
+signal life_absorbed(amount: float)
 
 const Drainable = preload("res://game/draining/drainable.gd")
+const Scaling = preload("res://game/draining/drain_scaling.gd")
 const StalkMesh = preload("res://game/demo/farmer_combat/wheat_stalk_mesh.gd")
 const STALK_SHADER: Shader = preload("res://game/demo/farmer_combat/wheat_stalk.gdshader")
 const CLUMP_HEIGHT: float = 0.95
@@ -11,8 +13,16 @@ const CHUNK_CELLS: int = 4
 const ROW_SPACING: float = 0.36
 const REWARD_SECONDS: float = 1.0
 
+class WheatDrainable extends Drainable:
+	var drain_efficiency: float = 1.0
+
+	func drain(requested_amount: float, source_volume: float, recipient: Node3D) -> float:
+		if not is_finite(drain_efficiency) or drain_efficiency <= 0.0:
+			return 0.0
+		return super.drain(requested_amount * minf(drain_efficiency, 1.0), source_volume, recipient)
+
 class CropCell:
-	var drainable: Drainable
+	var drainable: WheatDrainable
 	var collision: CollisionShape3D
 	var batch: MultiMesh
 	var first_instance: int
@@ -29,13 +39,20 @@ class ReserveTransfer:
 @export var exclusion_regions: Array[Rect2] = []
 @export_range(2.0, 12.0, 0.5) var stalks_per_square_meter: float = 8.0
 @export var generation_seed: int = 4170
+@export_range(0.01, 10.0, 0.01, "or_greater") var visual_height: float = 0.95
+@export_range(0.0, 10000.0, 0.01, "or_greater") var total_life_capacity: float = 0.0
+@export_range(0.0, 1.0, 0.001) var drain_efficiency: float = 1.0
 
+var ground_height: Callable
+var initial_capacity: float = 0.0
+var absorbed_capacity: float = 0.0
 var total_clumps: int = 0
 var harvested_count: int = 0
 var _rng: RandomNumberGenerator = RandomNumberGenerator.new()
 var _stalk_mesh: ArrayMesh
 var _material: ShaderMaterial
 var _transfers: Array[ReserveTransfer] = []
+var _life_modifier: float = 1.0
 
 
 func _ready() -> void:
@@ -60,6 +77,7 @@ func _process(delta: float) -> void:
 		var amount: float = transfer.remaining if transfer.time_left <= 0.0 else minf(transfer.remaining, transfer.total * elapsed / REWARD_SECONDS)
 		transfer.remaining = maxf(0.0, transfer.remaining - amount)
 		transfer.recipient.call(&"gain_life", amount)
+		_record_absorbed(amount)
 		if transfer.time_left <= 0.0:
 			_transfers.remove_at(index)
 	set_process(not _transfers.is_empty())
@@ -69,8 +87,22 @@ func _build_field() -> void:
 	if not field_size.is_finite() or field_size.x <= 0.0 or field_size.y <= 0.0:
 		push_error("Wheat field dimensions must be finite and positive")
 		return
+	if not is_finite(visual_height) or visual_height <= 0.0 or not is_finite(total_life_capacity) or total_life_capacity < 0.0:
+		push_error("Wheat height must be positive and life capacity must be nonnegative and finite")
+		return
 	var field := Rect2(-field_size * 0.5, field_size)
 	var cell_counts := Vector2i(ceili(field_size.x / CELL_SIZE), ceili(field_size.y / CELL_SIZE))
+	if total_life_capacity > 0.0:
+		var eligible_area: float = 0.0
+		for z: int in cell_counts.y:
+			for x: int in cell_counts.x:
+				var rect := Rect2(field.position + Vector2(x, z) * CELL_SIZE, Vector2.ONE * CELL_SIZE).intersection(field)
+				var area: float = _crop_area(rect)
+				if area > 0.001:
+					eligible_area += area
+		if eligible_area <= 0.0:
+			return
+		_life_modifier = total_life_capacity / Scaling.life_for_volume(eligible_area / (CELL_SIZE * CELL_SIZE) * CLUMP_HEIGHT)
 	for chunk_z: int in range(0, cell_counts.y, CHUNK_CELLS):
 		for chunk_x: int in range(0, cell_counts.x, CHUNK_CELLS):
 			_build_chunk(field, cell_counts, Vector2i(chunk_x, chunk_z))
@@ -106,8 +138,12 @@ func _build_chunk(field: Rect2, cell_counts: Vector2i, first_cell: Vector2i) -> 
 		batch.set_instance_transform(index, transforms[index])
 		batch.set_instance_color(index, colors[index])
 		batch.set_instance_custom_data(index, custom_data[index])
-	var chunk_size: Vector2 = (field.end - chunk_origin).min(Vector2.ONE * CELL_SIZE * CHUNK_CELLS)
-	batch.custom_aabb = AABB(Vector3(-0.65, -0.05, -0.65), Vector3(chunk_size.x + 1.3, 1.6, chunk_size.y + 1.3))
+	# Shader bending stays within 0.25 mesh-local meters, including fully withered stalks.
+	var stalk_bounds: AABB = _stalk_mesh.get_aabb().grow(0.25)
+	var chunk_bounds: AABB = transforms[0] * stalk_bounds
+	for index: int in range(1, transforms.size()):
+		chunk_bounds = chunk_bounds.merge(transforms[index] * stalk_bounds)
+	batch.custom_aabb = chunk_bounds
 	var visual := MultiMeshInstance3D.new()
 	visual.name = "WheatChunk%d_%d" % [first_cell.x, first_cell.y]
 	visual.position = Vector3(chunk_origin.x, 0.0, chunk_origin.y)
@@ -132,8 +168,8 @@ func _append_stalks(rect: Rect2, field: Rect2, chunk_origin: Vector2, transforms
 			if _rng.randf() < 0.055 + maxf(patchiness, 0.0) * 0.12:
 				continue
 			var basis := Basis(Vector3.UP, _rng.randf_range(0.0, TAU))
-			basis = basis.scaled(Vector3(1.0, _rng.randf_range(0.78, 1.24), 1.0))
-			transforms.append(Transform3D(basis, Vector3(point.x - chunk_origin.x, 0.0, point.y - chunk_origin.y)))
+			basis = basis.scaled(Vector3(1.0, _rng.randf_range(0.78, 1.24) * visual_height / CLUMP_HEIGHT, 1.0))
+			transforms.append(Transform3D(basis, Vector3(point.x - chunk_origin.x, _sample_ground(point), point.y - chunk_origin.y)))
 			colors.append(Color("bca65e").lerp(Color("d2b779"), _rng.randf()))
 			custom_data.append(Color(0.0, _rng.randf_range(-0.16, 0.16), _rng.randf_range(-0.16, 0.16), 0.0))
 
@@ -143,6 +179,10 @@ func _is_excluded(point: Vector2) -> bool:
 		if region.has_point(point):
 			return true
 	return false
+
+
+func _sample_ground(point: Vector2) -> float:
+	return float(ground_height.call(point.x, point.y)) if ground_height.is_valid() else 0.0
 
 
 func _crop_area(rect: Rect2) -> float:
@@ -170,9 +210,11 @@ func _crop_area(rect: Rect2) -> float:
 
 
 func _add_drain_cell(cell: CropCell, rect: Rect2, crop_area: float) -> void:
-	cell.drainable = Drainable.new()
+	cell.drainable = WheatDrainable.new()
+	cell.drainable.drain_efficiency = drain_efficiency
 	cell.drainable.name = "CropCell%d" % total_clumps
-	cell.drainable.position = Vector3(rect.get_center().x, CLUMP_HEIGHT * 0.5, rect.get_center().y)
+	var center: Vector2 = rect.get_center()
+	cell.drainable.position = Vector3(center.x, _sample_ground(center) + CLUMP_HEIGHT * 0.5, center.y)
 	cell.drainable.collision_layer = 8
 	cell.drainable.collision_mask = 0
 	cell.drainable.monitoring = false
@@ -186,7 +228,9 @@ func _add_drain_cell(cell: CropCell, rect: Rect2, crop_area: float) -> void:
 	cell.drainable.emission_radius = minf(rect.size.x, rect.size.y) * 0.5
 	# Sparse crop volume excludes planting gaps so render density cannot change eligibility or life.
 	var crop_width: float = sqrt(crop_area / (CELL_SIZE * CELL_SIZE))
+	cell.drainable.life_modifier = _life_modifier
 	cell.drainable.configure_volume(Vector3(crop_width, CLUMP_HEIGHT, crop_width))
+	initial_capacity += cell.drainable.capacity
 	cell.drainable.drained.connect(_on_cell_drained.bind(cell))
 	cell.drainable.collapsed.connect(_on_cell_collapsed.bind(cell))
 	total_clumps += 1
@@ -201,8 +245,16 @@ func _set_withering(cell: CropCell, amount: float) -> void:
 		cell.batch.set_instance_custom_data(index, data)
 
 
-func _on_cell_drained(_amount: float, cell: CropCell) -> void:
+func _record_absorbed(amount: float) -> void:
+	if amount <= 0.0:
+		return
+	absorbed_capacity += amount
+	life_absorbed.emit(amount)
+
+
+func _on_cell_drained(amount: float, cell: CropCell) -> void:
 	_set_withering(cell, 1.0 - cell.drainable.drain_fraction())
+	_record_absorbed(amount)
 
 
 func _on_cell_collapsed(cell: CropCell) -> void:
