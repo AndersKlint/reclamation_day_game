@@ -9,6 +9,7 @@ const COMBAT_HEIGHT_PER_SIZE: float = 2.2
 const PHYSICAL_SIZE_LIMIT: float = 3.0
 const Scaling = preload("res://game/draining/drain_scaling.gd")
 const WorldModel = preload("res://game/world/world_model.gd")
+const PhaseController = preload("res://game/balancer/phase_controller.gd")
 const MAX_EFFECTIVE_MOVEMENT_SPEED: float = 18.0
 const MAX_EFFECTIVE_ACCELERATION: float = 72.0
 const MAX_UPGRADE_MULTIPLIER: float = 1_000_000.0
@@ -25,6 +26,7 @@ const BANK_RESPONSE: float = 6.0
 @export_range(0.1, 30.0) var base_collapse_seconds: float = 2.0
 @export var max_health: float = 100.0
 @export var maximum_size: float = 1000.0
+@export var phase_controller: PhaseController
 var gameplay_enabled: bool = false
 var size: float = 1.0
 var life: float = 0.0
@@ -62,6 +64,7 @@ var effective_drain_rate: float:
 @onready var drain_area: Area3D = $DrainArea
 @onready var body_shape: CollisionShape3D = $CollisionShape3D
 @onready var visuals: Node3D = $Visuals
+@onready var reaper: Node3D = $Visuals/Reaper
 @onready var smoke: Node3D = $Visuals/ReaperSmoke
 @onready var drain_vfx: Node3D = $DrainVfx
 @onready var drain_audio: AudioStreamPlayer = $DrainAudio
@@ -81,11 +84,27 @@ func _ready() -> void:
 	# Presentation callbacks must run after the drain reward transaction completes.
 	drain_area.transfer_effect_requested.connect(drain_vfx.record_transfer, CONNECT_DEFERRED)
 	_refresh_growth()
+	if phase_controller != null:
+		phase_controller.bind(reaper)
 	set_gameplay_enabled(false)
 
 func _physics_process(delta: float) -> void:
 	if not gameplay_enabled or Input.mouse_mode != Input.MOUSE_MODE_CAPTURED:
 		velocity = Vector3.ZERO
+		_tick_phase(delta)
+		return
+	if phase_controller != null and phase_controller.is_travelling():
+		var phase_step: float = clampf(phase_controller.get_travel_remaining() / maxf(delta, 0.0001), 0.0, 1.0)
+		var travel_velocity: Vector3 = phase_controller.get_travel_velocity() * phase_step
+		velocity.x = travel_velocity.x
+		velocity.z = travel_velocity.z
+		if not is_on_floor():
+			velocity += get_gravity() * delta
+		move_and_slide()
+		_tick_phase(delta)
+		if not phase_controller.is_travelling():
+			velocity.x = 0.0
+			velocity.z = 0.0
 		return
 	var input: Vector2 = Input.get_vector(&"move_left", &"move_right", &"move_forward", &"move_backward")
 	var direction: Vector3 = camera_rig.global_basis * Vector3(input.x, 0.0, input.y)
@@ -103,12 +122,19 @@ func _physics_process(delta: float) -> void:
 	if not is_on_floor():
 		velocity += get_gravity() * delta
 	move_and_slide()
+	_tick_phase(delta)
+
+func _tick_phase(delta: float) -> void:
+	if gameplay_enabled and phase_controller != null:
+		phase_controller.tick(delta)
 
 func set_gameplay_enabled(enabled: bool) -> void:
 	gameplay_enabled = enabled and health > 0.0
 	velocity = Vector3.ZERO
 	_bank = 0.0
 	visuals.rotation.z = 0.0
+	if not gameplay_enabled and phase_controller != null:
+		phase_controller.cancel()
 	camera_rig.set_gameplay_enabled(gameplay_enabled)
 	drain_area.enabled = gameplay_enabled
 	drain_vfx.set_enabled(gameplay_enabled)
@@ -129,7 +155,11 @@ func _calculate_size() -> float:
 	return clampf(pow(1.0 + Scaling.growth_for_life(maxf(0.0, safe_life)) / base_volume, 1.0 / 3.0), 1.0, maximum)
 
 func _unhandled_input(event: InputEvent) -> void:
-	if not gameplay_enabled:
+	if not gameplay_enabled or Input.mouse_mode != Input.MOUSE_MODE_CAPTURED:
+		return
+	if phase_controller != null and InputMap.has_action(&"phase") and event.is_action_pressed(&"phase"):
+		_try_phase()
+		get_viewport().set_input_as_handled()
 		return
 	if event.is_action_pressed(&"debug_increase_life_large", false, true):
 		adjust_life(50000.0)
@@ -139,6 +169,22 @@ func _unhandled_input(event: InputEvent) -> void:
 		adjust_life(500.0)
 	elif event.is_action_pressed(&"debug_decrease_life", false, true):
 		adjust_life(-500.0)
+
+func _try_phase() -> void:
+	if phase_controller == null or not gameplay_enabled:
+		return
+	var input: Vector2 = Input.get_vector(&"move_left", &"move_right", &"move_forward", &"move_backward")
+	var direction: Vector3 = camera_rig.global_basis * Vector3(input.x, 0.0, input.y)
+	if direction.is_zero_approx():
+		direction = -visuals.global_basis.z
+	direction.y = 0.0
+	if direction.is_zero_approx():
+		return
+	if not phase_controller.try_activate(direction):
+		return
+	_bank = 0.0
+	visuals.rotation.z = 0.0
+	visuals.rotation.y = atan2(-direction.x, -direction.z)
 
 func adjust_life(amount: float) -> void:
 	if not is_finite(amount) or health <= 0.0:
@@ -151,6 +197,8 @@ func adjust_life(amount: float) -> void:
 
 func take_damage(amount: float) -> void:
 	if amount <= 0.0 or health <= 0.0 or not gameplay_enabled:
+		return
+	if phase_controller != null and phase_controller.is_invulnerable():
 		return
 	health = maxf(0.0, health - amount)
 	var lethal: bool = health <= 0.0

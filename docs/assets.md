@@ -24,6 +24,7 @@ Root: `available-assets/random-packs/`. Its root `index.json` and several pack-l
 | `PSX_Daysky_HDRI/` | Day sky HDRI |
 | `PSX_Nightsky_HDRI/` | Night sky HDRI |
 | `Street Furniture/` | Street furniture and props |
+| `maxdamage_farmer_v1.0/` | Max Damage farmer model (`.blend`) and texture; credit Max Damage and do not redistribute; used by the farmer combat demo. |
 
 ## Retro 3D collection
 

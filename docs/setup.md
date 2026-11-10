@@ -40,6 +40,7 @@ The Linux preset exports an explicit resource list to a resource pack:
 
 ## Environment gotchas
 
+- Some Soundly WAV originals use WAVE_FORMAT_EXTENSIBLE, which Godot rejects; their `.import` sidecars use `importer="keep"` to bypass audio import. Phase, player-hurt, and weapon-swing audio use game-local signed 16-bit PCM WAV derivatives with canonical format tag 1 and the original sample rate, channels, and timeline preserved; FFmpeg WAV output can still use the unsupported extensible header.
 - `opencode.json` sets `GODOT_PATH` to `/usr/bin/godot`; it must be an executable path, not a shell command. Restart OpenCode after changing it.
 - The DNF installs replace the earlier Flatpak workaround. The old `~/software/godot/` install was removed; do not reference it.
 - The Firejail profile grants write access to `~/.config/godot`, `~/.local/share/godot`, and `~/.cache/godot`. The developer edits `~/.config/firejail/strict-dev.profile`; agents must not modify it.

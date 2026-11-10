@@ -1,0 +1,8 @@
+[gd_scene load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://game/demo/farmer_combat/combat_interface.gd" id="1_interface"]
+
+[node name="CombatInterface" type="CanvasLayer"]
+process_mode = 3
+layer = 2
+script = ExtResource("1_interface")

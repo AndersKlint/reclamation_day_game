@@ -14,11 +14,22 @@ Open `project.godot` in Godot 4.7 and press **F5**, or from the project root:
 
 `game/run/run.tscn` retains the earlier compact prototype; open it and press **F6**.
 
+### Farmer combat demo
+
+`game/demo/farmer_combat/farmer_combat_demo.tscn` is an isolated 60 × 60 m wheatfield encounter: one farmer, wheat across the arena, and a blocking crate. Open the scene in the editor and press **F6**, or run:
+
+```sh
+/usr/bin/godot --path . res://game/demo/farmer_combat/farmer_combat_demo.tscn
+```
+
+Wheat drains automatically. Break the farmer's endurance, then stay close until the farmer is consumed. Esc pauses and retries reset the encounter.
+
 ## Controls
 
 - **Mouse:** orbit the third-person camera.
 - **WASD / arrows:** camera-relative movement; the Balancer turns toward movement. No jump or sprint.
 - **Esc:** pause/resume and release/recapture the cursor. Menus use the mouse or keyboard focus; retry is available from pause and result screens.
+- **Space:** phase forward a short distance in the farmer combat demo; brief invulnerability, then a cooldown.
 - **Period / comma:** debug-add / remove 500 life.
 - **Page Up / Page Down:** debug-add / remove 50,000 life.
 
@@ -36,3 +47,7 @@ Fixed dawn/sunrise twilight: an orange sun and warm low horizon under a cold blu
 - [Context](context.md) — tiny active handoff.
 - [Agent guide](AGENTS.md) — implementation and asset rules.
 - [Asset source and credits](available-assets/retro3d-assets/README.md) — upstream collection; commercially usable, no attribution required.
+
+## Credits
+
+- Farmer model: Max Damage (`maxdamage_farmer_v1.0`). Credit is required by its license; see `docs/assets.md`.

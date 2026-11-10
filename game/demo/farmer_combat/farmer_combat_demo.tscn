@@ -1,0 +1,104 @@
+[gd_scene load_steps=17 format=3]
+
+[ext_resource type="Script" path="res://game/demo/farmer_combat/farmer_combat_demo.gd" id="1_demo"]
+[ext_resource type="PackedScene" path="res://game/balancer/balancer.tscn" id="2_balancer"]
+[ext_resource type="PackedScene" path="res://game/demo/farmer_combat/farmer.tscn" id="3_farmer"]
+[ext_resource type="PackedScene" path="res://game/demo/farmer_combat/wheat_patch.tscn" id="4_wheat"]
+[ext_resource type="PackedScene" path="res://game/demo/dusk_atmosphere.tscn" id="5_dusk"]
+[ext_resource type="PackedScene" path="res://game/demo/farmer_combat/combat_interface.tscn" id="6_interface"]
+[ext_resource type="Texture2D" path="res://available-assets/retro3d-assets/Buildings/Abandoned House/Textures/groundgrass.png" id="7_ground"]
+[ext_resource type="Script" path="res://game/balancer/phase_controller.gd" id="8_phase"]
+
+[sub_resource type="StandardMaterial3D" id="ground_material"]
+albedo_texture = ExtResource("7_ground")
+roughness = 1.0
+uv1_scale = Vector3(14, 14, 1)
+
+[sub_resource type="BoxMesh" id="ground_mesh"]
+material = SubResource("ground_material")
+size = Vector3(60, 0.5, 60)
+
+[sub_resource type="BoxShape3D" id="ground_shape"]
+size = Vector3(60, 0.5, 60)
+
+[sub_resource type="BoxShape3D" id="wall_x_shape"]
+size = Vector3(0.5, 3, 60)
+
+[sub_resource type="BoxShape3D" id="wall_z_shape"]
+size = Vector3(60, 3, 0.5)
+
+[sub_resource type="StandardMaterial3D" id="crate_material"]
+albedo_color = Color(0.43, 0.34, 0.21, 1)
+roughness = 0.9
+
+[sub_resource type="BoxMesh" id="crate_mesh"]
+material = SubResource("crate_material")
+size = Vector3(1.6, 1.6, 1.6)
+
+[sub_resource type="BoxShape3D" id="crate_shape"]
+size = Vector3(1.6, 1.6, 1.6)
+
+[node name="FarmerCombatDemo" type="Node3D"]
+script = ExtResource("1_demo")
+
+[node name="Arena" type="StaticBody3D" parent="."]
+collision_layer = 1
+collision_mask = 0
+
+[node name="Ground" type="MeshInstance3D" parent="Arena"]
+position = Vector3(0, -0.25, 0)
+mesh = SubResource("ground_mesh")
+
+[node name="GroundShape" type="CollisionShape3D" parent="Arena"]
+position = Vector3(0, -0.25, 0)
+shape = SubResource("ground_shape")
+
+[node name="WestWall" type="CollisionShape3D" parent="Arena"]
+position = Vector3(-30, 1.5, 0)
+shape = SubResource("wall_x_shape")
+
+[node name="EastWall" type="CollisionShape3D" parent="Arena"]
+position = Vector3(30, 1.5, 0)
+shape = SubResource("wall_x_shape")
+
+[node name="NorthWall" type="CollisionShape3D" parent="Arena"]
+position = Vector3(0, 1.5, -30)
+shape = SubResource("wall_z_shape")
+
+[node name="SouthWall" type="CollisionShape3D" parent="Arena"]
+position = Vector3(0, 1.5, 30)
+shape = SubResource("wall_z_shape")
+
+[node name="Crate" type="StaticBody3D" parent="."]
+position = Vector3(4, 0.8, -1)
+collision_layer = 1
+collision_mask = 0
+
+[node name="Mesh" type="MeshInstance3D" parent="Crate"]
+mesh = SubResource("crate_mesh")
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="Crate"]
+shape = SubResource("crate_shape")
+
+[node name="DuskAtmosphere" parent="." instance=ExtResource("5_dusk")]
+
+[node name="Balancer" parent="." node_paths=PackedStringArray("phase_controller") instance=ExtResource("2_balancer")]
+position = Vector3(0, 0.05, 7)
+phase_controller = NodePath("PhaseController")
+
+[node name="PhaseController" type="Node3D" parent="Balancer"]
+script = ExtResource("8_phase")
+
+[node name="Farmer" parent="." instance=ExtResource("3_farmer")]
+position = Vector3(0, 0, -7)
+rotation = Vector3(0, 3.14159, 0)
+
+[node name="FarmerRemains" type="Node3D" parent="."]
+position = Vector3(0, 0, -7)
+
+[node name="WheatPatch" parent="." instance=ExtResource("4_wheat")]
+position = Vector3(0, 0, 0)
+rotation = Vector3(0, 0, 0)
+field_size = Vector2(58, 58)
+
+[node name="CombatInterface" parent="." instance=ExtResource("6_interface")]
