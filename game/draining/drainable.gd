@@ -54,6 +54,19 @@ func take_collapse_life() -> float:
 	remaining_capacity = 0.0
 	return amount
 
+func force_collapse(recipient: Node3D) -> bool:
+	if not _begin_collapse(recipient):
+		return false
+	collapsed.emit()
+	return true
+
+func _begin_collapse(recipient: Node3D) -> bool:
+	if state != State.DRAINING or not is_instance_valid(recipient):
+		return false
+	collector = recipient
+	state = State.COLLAPSED
+	return true
+
 func get_effect_position() -> Vector3:
 	return to_global(emission_offset)
 
@@ -82,7 +95,7 @@ func drain(requested_amount: float, source_volume: float, recipient: Node3D) -> 
 	var collapsed_now: bool = effective_amount >= available
 	if collapsed_now:
 		remaining_capacity = boundary
-		state = State.COLLAPSED
+		_begin_collapse(recipient)
 	drained.emit(removed)
 	if collapsed_now:
 		collapsed.emit()

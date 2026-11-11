@@ -32,6 +32,7 @@ var player: CharacterBody3D
 var state: State = State.PURSUE
 
 var _active: bool = false
+var _stun_left: float = 0.0
 var _defeated: bool = false
 var _state_left: float = 0.0
 var _state_duration: float = 0.0
@@ -68,6 +69,7 @@ var endurance: float:
 
 
 func _ready() -> void:
+	add_to_group(&"shockwave_enemies")
 	if not _visual.configure():
 		push_error("Farmer visual failed to configure")
 	var scale_vector: Vector3 = global_basis.get_scale().abs()
@@ -138,6 +140,14 @@ func stop() -> void:
 		_visual.update_pose(0.0, 0.0, 0.0, 0.0)
 
 
+func apply_stun(seconds: float) -> void:
+	if not is_finite(seconds) or seconds <= 0.0 or _defeated or is_queued_for_deletion():
+		return
+	_stun_left = maxf(_stun_left, seconds)
+	cancel_attack()
+	_visual.update_pose(0.0, 0.0, 0.0, 0.0)
+
+
 func _physics_process(delta: float) -> void:
 	if _defeated or not _active or is_queued_for_deletion():
 		return
@@ -147,6 +157,11 @@ func _physics_process(delta: float) -> void:
 	if not _player_gameplay_enabled():
 		cancel_attack()
 		_visual.update_pose(0.0, 0.0, 0.0, 0.0)
+		return
+	if _stun_left > 0.0:
+		_stun_left = maxf(0.0, _stun_left - delta)
+		_move(Vector3.ZERO, delta)
+		_visual.update_pose(0.0, 0.0, 0.0, delta)
 		return
 	if _region != null:
 		if not bool(_region.get("navigation_ready")):

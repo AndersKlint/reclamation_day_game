@@ -1,0 +1,21 @@
+[gd_resource type="Resource" script_class="UpgradeDefinition" load_steps=6 format=3]
+
+[ext_resource type="Script" path="res://game/upgrades/upgrade_definition.gd" id="1"]
+[ext_resource type="Script" path="res://game/upgrades/upgrade_variant.gd" id="2"]
+[ext_resource type="Script" path="res://game/upgrades/shockwave_effect.gd" id="3"]
+
+[sub_resource type="Resource" id="Shockwave"]
+script = ExtResource("3")
+
+[sub_resource type="Resource" id="Epic"]
+script = ExtResource("2")
+rarity = 2
+shockwave = SubResource("Shockwave")
+
+[resource]
+script = ExtResource("1")
+id = &"periodic_shockwave"
+title = "Earthquake"
+flavor_text = "Even earth itself fears you."
+repeatable = false
+variants = Array[ExtResource("2")]([SubResource("Epic")])

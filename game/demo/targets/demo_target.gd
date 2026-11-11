@@ -58,6 +58,17 @@ func _ready() -> void:
 	_label.hide()
 	add_child(_label)
 	_update_label()
+	if building_collapse:
+		add_to_group(&"shockwave_buildings")
+
+func get_shockwave_bounds() -> AABB:
+	return visual.global_transform * WorldModel.bounds(visual)
+
+func topple_from_shockwave(collector: Node3D) -> void:
+	if not building_collapse or _collapsed or is_queued_for_deletion() or not is_instance_valid(drainable):
+		return
+	if drainable.force_collapse(collector):
+		_clear_collision()
 
 func _process(delta: float) -> void:
 	_active_time = maxf(0.0, _active_time - delta)
@@ -127,6 +138,9 @@ func _clear_collision() -> void:
 	for node: Node in find_children("*", "CollisionShape3D", true, false):
 		var shape: CollisionShape3D = node as CollisionShape3D
 		if shape.get_parent() is StaticBody3D:
+			var body: StaticBody3D = shape.get_parent() as StaticBody3D
+			body.collision_layer = 0
+			body.collision_mask = 0
 			shape.set_deferred(&"disabled", true)
 
 func renew(duration: float) -> void:

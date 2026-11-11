@@ -5,10 +5,13 @@ enum Rarity { COMMON, UNCOMMON, EPIC, LEGENDARY }
 
 @export var rarity: Rarity = Rarity.COMMON
 @export var effects: Array[UpgradeStatEffect] = []
+@export var shockwave: ShockwaveEffect
 
 
 func is_valid() -> bool:
-	if not Rarity.values().has(rarity) or effects.is_empty():
+	if not Rarity.values().has(rarity) or (effects.is_empty() and shockwave == null):
+		return false
+	if shockwave != null and not shockwave.is_valid():
 		return false
 	var seen_stats: Dictionary[int, bool] = {}
 	for effect: UpgradeStatEffect in effects:
@@ -24,6 +27,8 @@ func get_description() -> String:
 	var descriptions: PackedStringArray = PackedStringArray()
 	for effect: UpgradeStatEffect in effects:
 		descriptions.append(effect.get_description())
+	if shockwave != null:
+		descriptions.append(shockwave.get_description())
 	return "\n".join(descriptions)
 
 

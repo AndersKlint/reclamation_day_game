@@ -56,6 +56,7 @@ func _ready() -> void:
 	if place_player_at_region_spawn:
 		balancer.global_position = region.get_player_spawn()
 		balancer.reset_physics_interpolation()
+	balancer.shockwave_controller.configure(balancer, self, Callable(region, "ground_position"))
 	balancer.health_changed.connect(_on_health_changed)
 	balancer.growth_changed.connect(_on_growth_changed)
 	balancer.died.connect(_queue_resolution)
@@ -221,6 +222,7 @@ func _on_upgrade_selected(offer: UpgradeOffer) -> void:
 		return
 	state = State.RUNNING
 	balancer.apply_upgrade(offer.variant.get_effects())
+	balancer.grant_shockwave(offer.variant.shockwave)
 	_refresh_growth_display()
 	interface.hide_overlays()
 	_queue_resolution()

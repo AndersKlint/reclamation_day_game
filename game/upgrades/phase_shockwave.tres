@@ -1,0 +1,23 @@
+[gd_resource type="Resource" script_class="UpgradeDefinition" load_steps=6 format=3]
+
+[ext_resource type="Script" path="res://game/upgrades/upgrade_definition.gd" id="1"]
+[ext_resource type="Script" path="res://game/upgrades/upgrade_variant.gd" id="2"]
+[ext_resource type="Script" path="res://game/upgrades/shockwave_effect.gd" id="3"]
+
+[sub_resource type="Resource" id="Shockwave"]
+script = ExtResource("3")
+trigger = 1
+stun_seconds = 3.0
+
+[sub_resource type="Resource" id="Legendary"]
+script = ExtResource("2")
+rarity = 3
+shockwave = SubResource("Shockwave")
+
+[resource]
+script = ExtResource("1")
+id = &"phase_shockwave"
+title = "Phasplosion"
+flavor_text = "No one saw it coming."
+repeatable = false
+variants = Array[ExtResource("2")]([SubResource("Legendary")])

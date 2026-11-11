@@ -40,6 +40,7 @@ var _region: Node3D
 var _route: PackedVector3Array = PackedVector3Array()
 var _heavy: bool = false
 var _active: bool = false
+var _stun_left: float = 0.0
 var _depleted: bool = false
 var _waypoint: int = 1
 var _windup_left: float = 0.0
@@ -95,6 +96,12 @@ func cancel_attack() -> void:
 	_cooldown_left = maxf(_cooldown_left, 1.0)
 	velocity = Vector3.ZERO
 
+func apply_stun(seconds: float) -> void:
+	if not is_finite(seconds) or seconds <= 0.0 or _depleted or is_queued_for_deletion():
+		return
+	_stun_left = maxf(_stun_left, seconds)
+	cancel_attack()
+
 func is_engaged() -> bool:
 	if not _active or _depleted or not is_instance_valid(_player):
 		return false
@@ -124,6 +131,7 @@ func _apply_variant() -> void:
 	impact_radius = 6.0
 
 func _ready() -> void:
+	add_to_group(&"shockwave_enemies")
 	drainable.emission_offset = Vector3(0.0, 1.4, 0.0)
 	drainable.emission_radius = 1.6
 	drainable.collapsed.connect(_on_collapsed)
@@ -150,6 +158,10 @@ func _physics_process(delta: float) -> void:
 	if not bool(_player.get("gameplay_enabled")):
 		cancel_attack()
 		_clear_shells()
+		return
+	if _stun_left > 0.0:
+		_stun_left = maxf(0.0, _stun_left - delta)
+		_drive(Vector3.ZERO, delta)
 		return
 	if not _route_started:
 		_start_route()

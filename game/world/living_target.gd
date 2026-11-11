@@ -62,6 +62,17 @@ func _ready() -> void:
 	drainable.drained.connect(_on_drained)
 	drainable.collapsed.connect(_on_collapsed)
 	_update_label()
+	if target_label == "Barn":
+		add_to_group(&"shockwave_buildings")
+
+func get_shockwave_bounds() -> AABB:
+	return visual.global_transform * WorldModel.bounds(visual)
+
+func topple_from_shockwave(collector: Node3D) -> void:
+	if target_label != "Barn" or _collapsed or is_queued_for_deletion():
+		return
+	if drainable.force_collapse(collector):
+		_clear_collision()
 
 func _on_collapsed() -> void:
 	_collapsed = true
@@ -77,10 +88,17 @@ func _start_depletion() -> void:
 
 func _clear_collision() -> void:
 	if is_instance_valid(blocking_collision):
+		var blocking_body: CollisionObject3D = blocking_collision.get_parent() as CollisionObject3D
+		if blocking_body != null:
+			blocking_body.collision_layer = 0
+			blocking_body.collision_mask = 0
 		blocking_collision.set_deferred(&"disabled", true)
 	for node: Node in find_children("*", "CollisionShape3D", true, false):
 		var shape: CollisionShape3D = node as CollisionShape3D
 		if shape.get_parent() is StaticBody3D:
+			var body: StaticBody3D = shape.get_parent() as StaticBody3D
+			body.collision_layer = 0
+			body.collision_mask = 0
 			shape.set_deferred(&"disabled", true)
 
 func _on_drained(_amount: float) -> void:

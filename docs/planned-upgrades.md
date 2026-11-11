@@ -1,6 +1,6 @@
 # Upgrade catalog
 
-The full upgrade catalog contains 21 upgrades: seven implemented in the initial set and fourteen planned. Names are display titles; effect descriptions use ordinary stat names.
+The full upgrade catalog contains 21 upgrades: nine implemented and twelve planned. Names are display titles; effect descriptions use ordinary stat names.
 
 ## Selection and stacking
 
@@ -16,9 +16,10 @@ The full upgrade catalog contains 21 upgrades: seven implemented in the initial 
 
 - Open a per-upgrade `.tres` resource under `game/upgrades/` in the Godot Inspector to edit its title, flavor text, and rarity variants.
 - Expand a variant's effects array and add or edit `UpgradeStatEffect` resources. Select the stat (drain speed, drain radius, movement speed, phase cooldown, resistance, or phase distance) and enter its percentage.
+- For special shockwaves, edit `UpgradeVariant.shockwave` as a `ShockwaveEffect` alongside stat effects. Its settings are trigger (`PERIODIC` or `PHASE_COMPLETED`), `interval_seconds`, `radius_multiplier`, `stun_seconds`, and `topple_buildings`.
 - Positive percentages increase speed, radius, or distance; for phase cooldown and resistance they reduce cooldown or damage taken. For example, movement speed `15` means +15% (×1.15), movement speed `200` means +200% (×3), and phase cooldown `20` means a 20% reduction (×0.8). Movement acceleration follows movement speed.
 - Open `game/upgrades/upgrade_catalog.tres` to edit the definitions included in the offer pool and their rarity weights. Default Common/Uncommon/Epic/Legendary weights are `59/30/9/2`; weights are relative, not required to total 100.
-- Effect descriptions are generated from the variant's effects; do not author separate effect descriptions. Flavor text remains separately editable.
+- Effect descriptions are generated from the variant's stat effects and shockwave configuration; do not author separate effect descriptions. Flavor text remains separately editable.
 
 ## Overview
 
@@ -35,7 +36,7 @@ The full upgrade catalog contains 21 upgrades: seven implemented in the initial 
 | Phasefull | Planned | E | After-phase fear shockwave; 10 consumed life, 30-second cooldown |
 | Phasetastic | Planned | E | Phase through objects |
 | Phase time | Planned | E | Press Space during phase cooldown to return to the position the phase started from |
-| Phasplosion | Planned | L | Post-phase shockwave topples nearby buildings and stuns enemies |
+| Phasplosion | Implemented | L | Completed-phase landing shockwave topples buildings within current drain radius and stuns hostiles for 3 seconds |
 | Outcry | Planned | C/U/E/L | Nearby damage every 30 seconds, equal to 3/5/8/12 seconds of drain damage |
 | The Unforgiven | Planned | L | No healing; damage dealt ×5 |
 | Godzilla | Planned | L | Current size ×2 on acquisition, twice usual consumed-life size growth, movement speed halved |
@@ -43,10 +44,10 @@ The full upgrade catalog contains 21 upgrades: seven implemented in the initial 
 | Just a little bit closer | Planned | L | Proximity-based drain speed, up to +300%; drain radius halved |
 | Pacifist | Planned | U | Ignore living creatures; drain speed ×2 |
 | The short king | Planned | E | Starting visible size retained; virtual growth with reduced growth-derived radius and speed bonuses |
-| Earthquake | Planned | E | Instantly topple buildings within drain radius every two minutes |
+| Earthquake | Implemented | E | Topple buildings within current drain radius every 120 active gameplay seconds after pickup |
 | Uno | Planned | C/U/E/L | Reflect projectiles at 20/40/60/100% chance; reflection kills the shooter |
 
-## Implemented initial set
+## Implemented upgrades
 
 ### Thirst
 
@@ -97,6 +98,24 @@ The full upgrade catalog contains 21 upgrades: seven implemented in the initial 
 
 - **Legendary, once per run:** Movement speed ×3, with acceleration scaled by the same multiplier.
 
+### Earthquake
+
+*“Even earth itself fears you.”*
+
+- **Epic, once per run:** The first shockwave triggers after 120 active gameplay seconds following pickup, then every 120 active gameplay seconds. The timer pauses in menus.
+- Each trigger snapshots the current drain radius and affects buildings only within that radius, bypassing size gating. Toppled buildings reward their remaining life exactly once through the normal collapse path and animation.
+- **Presentation:** Shares an expanding-wave visual effect and the same muffled, low-pass bass explosion sound with Phasplosion.
+
+### Phasplosion
+
+*“No one saw it coming.”*
+
+- **Legendary, once per run:** Release a shockwave at the landing position after each completed phase, never on cancellation. Each trigger snapshots the current drain radius.
+- Within that radius, topple buildings regardless of size gating, rewarding their remaining life exactly once through the normal collapse path and animation, as with Earthquake.
+- Stun all hostile humans, farmers, and tanks within that radius for 3 seconds. Repeated stuns refresh the duration rather than stacking; already-fired projectiles remain.
+- Deals no direct damage and has no extra cost or cooldown.
+- **Presentation:** Shares Earthquake's expanding-wave visual effect and the same muffled, low-pass bass explosion sound.
+
 ## Planned upgrades
 
 ### Voidwalker
@@ -126,14 +145,6 @@ The full upgrade catalog contains 21 upgrades: seven implemented in the initial 
 
 - **Epic, once per run:** During phase cooldown, press Space again to return to the position the phase started from.
 - **Unresolved:** Return safety, cooldown behavior after returning, and how many return uses are allowed per phase.
-
-### Phasplosion
-
-*“No one saw it coming.”*
-
-- **Legendary, once per run:** After phasing, release a shockwave that topples nearby buildings and stuns enemies.
-- **Presentation:** A distinct shockwave visual effect and a deep, bassy, muffled/low-pass-filtered explosion sound.
-- **Unresolved:** Shockwave radius, stun duration, any cost or cooldown, and rewards from toppled buildings.
 
 ### Outcry
 
@@ -182,13 +193,6 @@ The full upgrade catalog contains 21 upgrades: seven implemented in the initial 
 - **Epic, once per run:** Lock visible size to starting size. Virtual growth retains drain power and range progression, but growth-derived radius and speed bonuses are reduced by 80%.
 - This reduction applies to growth-derived bonuses, not necessarily to total radius or movement speed. Acceleration follows movement speed scaling.
 - **Unresolved:** Exact virtual-growth formula and how retained range progression combines with the reduced radius bonus.
-
-### Earthquake
-
-*“Even earth itself fears you.”*
-
-- **Epic, once per run:** Every two minutes, instantly topple buildings within drain radius.
-- **Unresolved:** Rewards from toppled buildings.
 
 ### Uno
 

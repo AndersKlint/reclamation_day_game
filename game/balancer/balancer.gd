@@ -10,6 +10,7 @@ const PHYSICAL_SIZE_LIMIT: float = 3.0
 const Scaling = preload("res://game/draining/drain_scaling.gd")
 const WorldModel = preload("res://game/world/world_model.gd")
 const PhaseController = preload("res://game/balancer/phase_controller.gd")
+const ShockwaveController = preload("res://game/balancer/shockwave_controller.gd")
 const MAX_UPGRADE_MULTIPLIER: float = 1_000_000.0
 const MAX_ACCUMULATED_MULTIPLIER: float = 1_000_000.0
 const MIN_REDUCTION_MULTIPLIER: float = 1.0e-12
@@ -31,6 +32,7 @@ const MAX_HEALING_PER_SECOND: float = 2.0
 @export var maximum_size: float = 1000.0
 @export var phase_controller: PhaseController
 var gameplay_enabled: bool = false
+var shockwave_controller: ShockwaveController
 var size: float = 1.0
 var life: float = 0.0
 var base_volume: float = 0.0
@@ -79,6 +81,10 @@ var effective_drain_rate: float:
 @onready var camera_rig: Node3D = $CameraRig
 
 func _ready() -> void:
+	shockwave_controller = ShockwaveController.new()
+	shockwave_controller.name = "ShockwaveController"
+	shockwave_controller.process_mode = Node.PROCESS_MODE_PAUSABLE
+	add_child(shockwave_controller)
 	body_shape.shape = body_shape.shape.duplicate()
 	add_to_group(&"player")
 	health = max_health
@@ -256,6 +262,9 @@ func take_damage(amount: float) -> void:
 	health_changed.emit(health, max_health)
 	if lethal:
 		died.emit()
+
+func grant_shockwave(effect: ShockwaveEffect) -> void:
+	shockwave_controller.grant(effect)
 
 func apply_upgrade(effects: Dictionary[String, float]) -> void:
 	for effect: float in effects.values():

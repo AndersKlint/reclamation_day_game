@@ -2,6 +2,7 @@ extends Node3D
 
 signal phase_started()
 signal phase_finished()
+signal phase_completed()
 signal state_changed(state: State)
 signal cooldown_changed(remaining: float, duration: float)
 
@@ -84,7 +85,7 @@ func tick(delta: float) -> void:
 		State.TRAVELLING:
 			_travel_remaining -= delta
 			if _travel_remaining <= 0.0:
-				_finish_travel()
+				_finish_travel(true)
 		State.COOLDOWN:
 			_cooldown_remaining = maxf(0.0, _cooldown_remaining - delta)
 			if _cooldown_remaining <= 0.0:
@@ -98,7 +99,7 @@ func cancel() -> void:
 	if _state == State.TRAVELLING:
 		_travel_remaining = 0.0
 		_direction = Vector3.ZERO
-		_finish_travel()
+		_finish_travel(false)
 	if _vfx != null:
 		_vfx.clear()
 
@@ -134,13 +135,15 @@ func get_cooldown_remaining_ratio() -> float:
 	var duration: float = get_cooldown_duration()
 	return _cooldown_remaining / duration if duration > 0.0 else 0.0
 
-func _finish_travel() -> void:
+func _finish_travel(completed: bool) -> void:
 	_end_presentation()
 	_cooldown_remaining = get_cooldown_duration()
 	_state = State.COOLDOWN
 	state_changed.emit(_state)
 	cooldown_changed.emit(_cooldown_remaining, get_cooldown_duration())
 	phase_finished.emit()
+	if completed:
+		phase_completed.emit()
 
 func _begin_presentation() -> void:
 	if _presentation_active:

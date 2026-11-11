@@ -19,6 +19,7 @@ const COMBAT_TURN_RATE: float = deg_to_rad(120.0)
 
 var _balancer: CharacterBody3D
 var _active: bool = false
+var _stun_left: float = 0.0
 var _windup_left: float = 0.0
 var _ranged_attack_pending: bool = false
 var _shot_committed: bool = false
@@ -59,6 +60,7 @@ func configure_remains(remains_parent: Node3D, ground_position: Callable) -> voi
 	_ground_position = ground_position
 
 func _ready() -> void:
+	add_to_group(&"shockwave_enemies")
 	_visual.configure(ranged)
 	_model_dimensions = WorldModel.bounds(_visual, true).size
 	drainable.configure_volume(_model_dimensions * global_basis.get_scale().abs())
@@ -95,6 +97,12 @@ func cancel_attack() -> void:
 	if is_instance_valid(_warning):
 		_warning.visible = false
 
+func apply_stun(seconds: float) -> void:
+	if not is_finite(seconds) or seconds <= 0.0 or drainable.is_collapsed or is_queued_for_deletion():
+		return
+	_stun_left = maxf(_stun_left, seconds)
+	cancel_attack()
+
 func _physics_process(delta: float) -> void:
 	if not _active or is_queued_for_deletion():
 		return
@@ -103,6 +111,10 @@ func _physics_process(delta: float) -> void:
 		return
 	if not bool(_balancer.get("gameplay_enabled")):
 		cancel_attack()
+		return
+	if _stun_left > 0.0:
+		_stun_left = maxf(0.0, _stun_left - delta)
+		_move(Vector3.ZERO, delta)
 		return
 	_cooldown_left = maxf(0.0, _cooldown_left - delta)
 	var target: Vector3 = _combat_target(global_position + Vector3.UP * 1.3)
