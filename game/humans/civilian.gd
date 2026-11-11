@@ -167,7 +167,7 @@ func _create_remains() -> void:
 		remains_parent.add_child(effect)
 		effect.global_transform = Transform3D(Basis.IDENTITY, global_position)
 		effect.style = DEPLETION_SCRIPT.Style.HUMANOID
-		effect.configure_reward(_drainable.take_collapse_life(), _drainable.collector)
+		effect.configure_reward(_drainable.take_collapse_life(), _drainable.collector, _drainable.healing_per_life)
 		_visual.reparent(effect, true)
 		effect.configure(_visual, _model_dimensions, _ground_position)
 		effect.start()

@@ -16,6 +16,7 @@ const MAX_LIFE: float = 1_000_000_000_000_000_000_000_000_000_000.0
 const BANK_PER_TURN_RATE: float = 0.03
 const MAX_BANK: float = 0.035
 const BANK_RESPONSE: float = 6.0
+const MAX_HEALING_PER_SECOND: float = 2.0
 
 @export var base_movement_speed: float = 6.0
 @export var acceleration: float = 24.0
@@ -42,6 +43,7 @@ var _geometry_update_pending: bool = false
 var _absorption_bounds: AABB
 var _absorption_bounds_ready: bool = false
 var _bank: float = 0.0
+var _pending_healing: float = 0.0
 var effective_movement_speed: float:
 	get:
 		var raw: float = base_movement_speed * _movement_scale() * movement_multiplier
@@ -90,9 +92,11 @@ func _ready() -> void:
 
 func _physics_process(delta: float) -> void:
 	if not gameplay_enabled or Input.mouse_mode != Input.MOUSE_MODE_CAPTURED:
+		_pending_healing = 0.0
 		velocity = Vector3.ZERO
 		_tick_phase(delta)
 		return
+	_consume_pending_healing(delta)
 	if phase_controller != null and phase_controller.is_travelling():
 		var phase_step: float = clampf(phase_controller.get_travel_remaining() / maxf(delta, 0.0001), 0.0, 1.0)
 		var travel_velocity: Vector3 = phase_controller.get_travel_velocity() * phase_step
@@ -132,6 +136,7 @@ func set_gameplay_enabled(enabled: bool) -> void:
 	gameplay_enabled = enabled and health > 0.0
 	velocity = Vector3.ZERO
 	_bank = 0.0
+	_pending_healing = 0.0
 	visuals.rotation.z = 0.0
 	if not gameplay_enabled and phase_controller != null:
 		phase_controller.cancel()
@@ -148,6 +153,27 @@ func gain_life(amount: float) -> void:
 	size = _calculate_size()
 	_refresh_growth()
 	growth_changed.emit(life, size)
+
+func request_healing(amount: float) -> void:
+	if not gameplay_enabled or health <= 0.0 or not is_finite(amount) or amount <= 0.0:
+		return
+	var frame_cap: float = MAX_HEALING_PER_SECOND * maxf(get_physics_process_delta_time(), 0.0)
+	_pending_healing = minf(_pending_healing + amount, frame_cap)
+
+func _consume_pending_healing(delta: float) -> void:
+	var demand: float = _pending_healing
+	_pending_healing = 0.0
+	if demand <= 0.0 or not gameplay_enabled or health <= 0.0:
+		return
+	var healed: float = minf(minf(demand, MAX_HEALING_PER_SECOND * maxf(delta, 0.0)), max_health - health)
+	if healed <= 0.0:
+		return
+	health = minf(max_health, health + healed)
+	health_changed.emit(health, max_health)
+
+func _notification(what: int) -> void:
+	if what == NOTIFICATION_PAUSED:
+		_pending_healing = 0.0
 
 func _calculate_size() -> float:
 	var safe_life: float = life if is_finite(life) else 0.0

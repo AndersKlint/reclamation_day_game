@@ -46,8 +46,14 @@ func _physics_process(delta: float) -> void:
 			absorbed += amount
 			if amount > 0.0:
 				transfer_effect_requested.emit(source_id, source_position, source_radius, amount / delta, proximity)
+				_request_healing(target.healing_for(amount))
 	if absorbed > 0.0:
 		life_absorbed.emit(absorbed)
+
+func _request_healing(amount: float) -> void:
+	if amount <= 0.0 or not is_instance_valid(collector) or not collector.has_method(&"request_healing"):
+		return
+	collector.call(&"request_healing", amount)
 
 func set_reach(reach: float) -> void:
 	_reach = reach

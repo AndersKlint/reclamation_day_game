@@ -8,6 +8,7 @@ const Scaling = preload("res://game/draining/drain_scaling.gd")
 enum State { UNCONFIGURED, DRAINING, COLLAPSED, TRANSFERRED }
 
 @export_range(0.01, 100.0) var life_modifier: float = 1.0
+@export_range(0.0, 1000.0, 0.01, "or_greater") var healing_per_life: float = 0.0
 @export var emission_offset: Vector3 = Vector3.ZERO
 @export_range(0.0, 100.0) var emission_radius: float = 0.4
 var capacity: float = 0.0
@@ -54,6 +55,14 @@ func take_collapse_life() -> float:
 
 func get_effect_position() -> Vector3:
 	return to_global(emission_offset)
+
+func healing_for(amount: float) -> float:
+	if not is_finite(healing_per_life) or healing_per_life <= 0.0:
+		return 0.0
+	if not is_finite(amount) or amount <= 0.0:
+		return 0.0
+	var healing: float = amount * healing_per_life
+	return healing if is_finite(healing) else 0.0
 
 func get_effect_radius() -> float:
 	return maxf(0.0, emission_radius)

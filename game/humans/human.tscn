@@ -1,8 +1,9 @@
-[gd_scene load_steps=6 format=3]
+[gd_scene load_steps=7 format=3]
 
 [ext_resource type="Script" path="res://game/humans/human.gd" id="1"]
 [ext_resource type="PackedScene" path="res://game/draining/drainable.tscn" id="2"]
 [ext_resource type="Script" path="res://game/humans/human_visual.gd" id="3"]
+[ext_resource type="Script" path="res://game/humans/human_drainable.gd" id="4"]
 [sub_resource type="CapsuleShape3D" id="shape"]
 radius = 0.35
 height = 1.8
@@ -31,3 +32,4 @@ visible = false
 mesh = SubResource("warning")
 cast_shadow = 0
 [node name="Drainable" parent="." instance=ExtResource("2")]
+script = ExtResource("4")

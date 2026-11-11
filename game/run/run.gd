@@ -112,7 +112,7 @@ func _update_location() -> void:
 		return
 	match region.get_zone_at(balancer.global_position):
 		&"field":
-			interface.update_location("Southern fields", "Gather life among the hedgerows. Follow the road north toward the village.")
+			interface.update_location("Southern fields", "Two wheat fields hold early life. Their farmers guard the crop; the lane north leads to the village.")
 		&"approach":
 			interface.update_location("Village approach", "The lamps mark the way north. Grow in the fields before facing the village resistance.")
 		&"village":
@@ -146,6 +146,8 @@ func _start_escalation() -> void:
 		return
 	_escalation_started = true
 	human_director.start()
+	if region.has_method(&"start_field_encounters"):
+		region.call(&"start_field_encounters", balancer)
 	if tank_director != null:
 		tank_director.call(&"start")
 
@@ -304,6 +306,8 @@ func _stop_managers() -> void:
 	_hit_feedback.cancel()
 	if _opening != null:
 		_opening.call(&"stop")
+	if region.has_method(&"stop_field_encounters"):
+		region.call(&"stop_field_encounters")
 	human_director.stop()
 	if civilian_population != null:
 		civilian_population.stop()

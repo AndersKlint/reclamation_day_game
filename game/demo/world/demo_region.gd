@@ -10,7 +10,12 @@ const CoverPatch = preload("res://game/demo/world/cover_patch.gd")
 const CityBuilder = preload("res://game/demo/city/city_builder.gd")
 const CityLayout = preload("res://game/demo/city/city_layout.gd")
 const FARM_OPENING: PackedScene = preload("res://game/demo/farm_opening/farm_opening.tscn")
+const RURAL_FIELD: PackedScene = preload("res://game/demo/rural_fields/rural_field.tscn")
 const FARM_CENTER: Vector2 = Vector2(0.0, 280.0)
+const FIELD_SITES: Array[Dictionary] = [
+	{"center": Vector2(-52.0, 124.0), "size": Vector2(60.0, 80.0), "seed": 71041},
+	{"center": Vector2(54.0, 100.0), "size": Vector2(56.0, 76.0), "seed": 71042},
+]
 const COVER_FADE_SHADER: Shader = preload("res://game/demo/world/ground_cover_fade.gdshader")
 const GROUND = preload("res://available-assets/retro3d-assets/Buildings/Abandoned House/Textures/groundgrass.png")
 const GRASS = preload("res://available-assets/retro3d-assets/Nature/Materials/grass_bush_1.png")
@@ -47,6 +52,9 @@ var _landscape: Node3D
 var _decoration: Node3D
 var _target_root: Node3D
 var _spawn_root: Node3D
+var _fields_root: Node3D
+var _fields: Array[Node3D] = []
+var _field_footprints: Array[Rect2] = []
 var _grass_material: StandardMaterial3D
 var _grass_fade_material: ShaderMaterial
 var _renew_tween: Tween
@@ -64,10 +72,12 @@ func _ready() -> void:
 	_decoration = _container("Decoration")
 	_target_root = _container("Targets")
 	_spawn_root = _container("SpawnPoints")
+	_fields_root = _container("Fields")
 	_build_terrain()
 	_build_roads()
 	_build_city()
 	_build_settlement()
+	_build_fields()
 	_build_resources()
 	_build_margins()
 	_build_farm_opening()
@@ -304,10 +314,11 @@ func _place_target(kind: StringName, location: Vector3, dimensions: Vector3, yaw
 	_register_target(target)
 	return target
 
-func _register_target(target: Node3D) -> void:
+func _register_target(target: Node3D, preserve_parent: bool = false) -> void:
 	target.get_node("Drainable").drained.connect(_on_drained)
 	_targets.append(target)
-	_target_root.add_child(target)
+	if not preserve_parent:
+		_target_root.add_child(target)
 	initial_capacity += float(target.get_node("Drainable").get("capacity"))
 	var effect: Node = target.get_node_or_null("DepletionEffect")
 	if effect != null and effect.has_signal(&"life_absorbed"):
@@ -340,6 +351,39 @@ func _build_settlement() -> void:
 		var rock: Vector2 = Vector2(center.x + 12, center.z - 7)
 		if not _on_road(rock, 1.5):
 			_scenery(&"rock", rock, Vector3(1.5, 0.9, 1.5))
+
+func _build_fields() -> void:
+	for site: Dictionary in FIELD_SITES:
+		var field: Node3D = RURAL_FIELD.instantiate() as Node3D
+		field.set(&"footprint_size", site["size"])
+		field.set(&"generation_seed", site["seed"])
+		var center: Vector2 = site["center"]
+		field.position = Vector3(center.x, 0.0, center.y)
+		field.call(&"prepare", self)
+		_fields_root.add_child(field)
+		_field_footprints.append(_field_footprint(field))
+		initial_capacity += float(field.get(&"initial_wheat_capacity"))
+		var wheat: Node3D = field.get(&"wheat") as Node3D
+		if wheat != null:
+			wheat.connect(&"life_absorbed", _on_drained)
+		var fences: Array = field.get(&"fence_targets")
+		for fence: Node3D in fences:
+			_register_target(fence, true)
+		_fields.append(field)
+
+func _field_footprint(field: Node3D) -> Rect2:
+	var local: Rect2 = field.call(&"footprint") as Rect2
+	return Rect2(local.position + Vector2(field.position.x, field.position.z), local.size)
+
+func start_field_encounters(player: CharacterBody3D) -> void:
+	for field: Node3D in _fields:
+		if is_instance_valid(field):
+			field.call(&"start", player)
+
+func stop_field_encounters() -> void:
+	for field: Node3D in _fields:
+		if is_instance_valid(field):
+			field.call(&"stop")
 
 func _fence(p: Vector2, dimensions: Vector3, material: Material) -> void:
 	var root: Node3D = Node3D.new()
@@ -390,15 +434,18 @@ func _build_resources() -> void:
 			var radius: float = _rng.randf_range(12, 17) if starter else _rng.randf_range(6, 16)
 			var p: Vector2 = center + Vector2(cos(angle), sin(angle)) * radius
 			p.y = maxf(p.y, 36.0)
+			p = _field_margin(p)
 			_place_target(&"bush" if i % 2 == 0 else &"bush_alt", Vector3(p.x, 0, p.y), Vector3(3.2, 2.1, 3.2), angle)
 	for i: int in 12:
-		var p: Vector3 = Vector3(-80 if i % 2 == 0 else 80, 0, 45 + (i / 2) * 20)
-		_place_target(StringName("forest_tree%d" % (1 + i % 4)), p, Vector3(8, 11, 8))
+		var p: Vector2 = Vector2(-80 if i % 2 == 0 else 80, 45 + (i / 2) * 20)
+		p = _field_margin(p)
+		_place_target(StringName("forest_tree%d" % (1 + i % 4)), Vector3(p.x, 0, p.y), Vector3(8, 11, 8))
 	for row: int in 4:
 		for column: int in 4:
 			var p: Vector2 = Vector2(-72 + column * 14, 27 - row * 13)
 			if _clear_route(p):
 				p = Vector2(-121 - column * 3, 40 + row * 13)
+			p = _field_margin(p)
 			_place_target(StringName("forest_tree%d" % (1 + (row + column) % 4)), Vector3(p.x, 0, p.y), Vector3(7, 9, 7))
 	for i: int in 10:
 		_place_target(&"bush", Vector3(53 + (i % 5) * 9, 0, 15 + (i / 5) * 12), Vector3(3, 2, 3))
@@ -459,7 +506,39 @@ func _on_road(p: Vector2, clearance: float = 3.0) -> bool:
 				return true
 	return false
 
+func _in_field(p: Vector2, inset: float = 0.0) -> bool:
+	for footprint: Rect2 in _field_footprints:
+		if footprint.grow(-inset).has_point(p):
+			return true
+	return false
+
+func _field_margin(p: Vector2) -> Vector2:
+	var margin: float = 5.0
+	for footprint: Rect2 in _field_footprints:
+		if not footprint.has_point(p):
+			continue
+		var left: float = p.x - footprint.position.x
+		var right: float = footprint.end.x - p.x
+		var top: float = p.y - footprint.position.y
+		var bottom: float = footprint.end.y - p.y
+		var nearest: float = minf(minf(left, right), minf(top, bottom))
+		# Field gates face the central lane, so nearest-side relocation skips the gate edge.
+		var gate_left: bool = footprint.get_center().x > 0.0
+		if nearest == left and not gate_left:
+			p.x = footprint.position.x - margin
+		elif nearest == right and gate_left:
+			p.x = footprint.end.x + margin
+		elif nearest == left or nearest == right:
+			p.y = footprint.position.y - margin if top <= bottom else footprint.end.y + margin
+		elif top <= bottom:
+			p.y = footprint.position.y - margin
+		else:
+			p.y = footprint.end.y + margin
+	return p
+
 func _clear_route(p: Vector2) -> bool:
+	if _in_field(p, 4.0):
+		return true
 	if Rect2(FARM_CENTER - Vector2(48.0, 48.0), Vector2(96.0, 96.0)).has_point(p):
 		return true
 	if _on_road(p):

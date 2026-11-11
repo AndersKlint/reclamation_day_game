@@ -1,7 +1,8 @@
-[gd_scene load_steps=4 format=3]
+[gd_scene load_steps=5 format=3]
 
 [ext_resource type="Script" path="res://game/humans/civilian.gd" id="1"]
 [ext_resource type="PackedScene" path="res://game/draining/drainable.tscn" id="2"]
+[ext_resource type="Script" path="res://game/humans/human_drainable.gd" id="3"]
 
 [sub_resource type="CapsuleShape3D" id="body"]
 radius = 0.35
@@ -21,3 +22,5 @@ shape = SubResource("body")
 
 [node name="Drainable" parent="." instance=ExtResource("2")]
 emission_offset = Vector3(0, 1, 0)
+script = ExtResource("3")
+drain_efficiency = 0.15

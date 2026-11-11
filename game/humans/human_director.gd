@@ -4,13 +4,10 @@ signal tier_changed(tier: int)
 signal human_spawned(human: CharacterBody3D)
 
 const HumanScene: PackedScene = preload("res://game/humans/human.tscn")
-const FarmerScene: PackedScene = preload("res://game/demo/farmer_combat/farmer.tscn")
-const Farmer = preload("res://game/demo/farmer_combat/farmer.gd")
 
 @export_range(1, 30) var maximum_active: int = 16
 @export_range(1, 30) var early_population: int = 4
 @export var initial_delay: float = 8.0
-@export var initial_field_delay: float = 22.0
 @export var early_spawn_interval: float = 7.0
 @export var late_spawn_interval: float = 4.5
 @export_range(0.0, 1.0) var ranged_progress_threshold: float = 0.3
@@ -124,15 +121,16 @@ func _physics_process(delta: float) -> void:
 			return
 		var next_zone: StringName = _region.call("get_zone_at", _balancer.global_position)
 		if next_zone != _zone:
-			var first_field_entry: bool = _zone == &"" and next_zone == &"field"
 			_zone = next_zone
 			_zone_time = 0.0
-			_spawn_left = initial_field_delay if first_field_entry else zone_entry_delay
+			_spawn_left = zone_entry_delay
 		_zone_time += delta
 		_set_tier(_tier_for_zone(_zone))
 	for index: int in range(_humans.size() - 1, -1, -1):
 		if not is_instance_valid(_humans[index]) or _humans[index].is_queued_for_deletion():
 			_humans.remove_at(index)
+	if _zone == &"field" or _zone == &"approach":
+		return
 	_spawn_left -= delta
 	var limit: int = _population_limit()
 	if _spawn_left > 0.0 or _humans.size() >= limit:
@@ -229,28 +227,16 @@ func _spawn_human() -> void:
 		elif tier == 4:
 			ranged_chance = downtown_ranged_fraction
 		var ranged: bool = tier >= 1 and _random.randf() < ranged_chance
-		var rural_farmer: bool = _region != null and _zone in [&"field", &"approach"] and not ranged
-		var human: CharacterBody3D
-		if rural_farmer:
-			var farmer: Farmer = FarmerScene.instantiate() as Farmer
-			human = farmer
-			add_child(farmer)
-			farmer.global_position = spawn_position
-			var height_ratio: float = farmer.get_model_height() / float(_balancer.call(&"get_reference_model_height"))
-			farmer.set_minimum_player_volume(float(_balancer.get("base_volume")) * pow(height_ratio, 3.0))
-			farmer.configure_region(_region, spawn_position, home_leash)
-			farmer.configure(_balancer, get_parent() as Node3D)
-		else:
-			human = HumanScene.instantiate() as CharacterBody3D
-			if ranged:
-				_configure_ranged(human)
-			human.configure(_balancer)
-			human.configure_remains(get_parent() as Node3D, _ground_position)
-			if _region != null:
-				human.configure_region(_region, _zone, spawn_position)
-				human.home_leash = home_leash
-			add_child(human)
-			human.global_position = spawn_position
+		var human: CharacterBody3D = HumanScene.instantiate() as CharacterBody3D
+		if ranged:
+			_configure_ranged(human)
+		human.configure(_balancer)
+		human.configure_remains(get_parent() as Node3D, _ground_position)
+		if _region != null:
+			human.configure_region(_region, _zone, spawn_position)
+			human.home_leash = home_leash
+		add_child(human)
+		human.global_position = spawn_position
 		human.reset_physics_interpolation()
 		_humans.append(human)
 		_next_spawn = (index + 1) % _spawn_points.size()

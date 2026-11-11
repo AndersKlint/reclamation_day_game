@@ -88,6 +88,7 @@ var _magnet_target: Node3D
 var _magnet_pieces: Array[MagnetPiece] = []
 var _previous_magnet_target: Vector3 = Vector3.INF
 var _pending_life: float = 0.0
+var _healing_per_life: float = 0.0
 var _absorb_sound_played: bool = false
 var _flattened: bool = false
 var _remaining_life: float = 0.0
@@ -103,11 +104,12 @@ func _exit_tree() -> void:
 	_release_animated_collapse()
 
 
-func configure_reward(amount: float, recipient: Node3D) -> void:
+func configure_reward(amount: float, recipient: Node3D, healing_per_life: float = 0.0) -> void:
 	assert(not _started and is_finite(amount) and amount >= 0.0 and is_instance_valid(recipient))
 	process_mode = Node.PROCESS_MODE_PAUSABLE
 	reserved_life = amount
 	_remaining_life = amount
+	_healing_per_life = healing_per_life if is_finite(healing_per_life) and healing_per_life > 0.0 else 0.0
 	_magnet_target = recipient
 
 
@@ -290,7 +292,16 @@ func _flush_absorbed_life() -> void:
 		return
 	_remaining_life = maxf(0.0, _remaining_life - amount)
 	_magnet_target.call(&"gain_life", amount)
+	_request_healing(amount)
 	life_absorbed.emit(amount)
+
+func _request_healing(amount: float) -> void:
+	if _healing_per_life <= 0.0 or not is_instance_valid(_magnet_target) or not _magnet_target.has_method(&"request_healing"):
+		return
+	var healing: float = amount * _healing_per_life
+	if not is_finite(healing) or healing <= 0.0:
+		return
+	_magnet_target.call(&"request_healing", healing)
 
 
 func _play_absorb_sound() -> void:
