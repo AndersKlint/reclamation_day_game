@@ -4,6 +4,9 @@ const DEPLETION_EFFECT: PackedScene = preload("res://game/draining/depletion_eff
 const DEPLETION_SCRIPT = preload("res://game/draining/depletion_effect.gd")
 const Drainable = preload("res://game/draining/drainable.gd")
 const WorldModel = preload("res://game/world/world_model.gd")
+const POLICE_BULLET: PackedScene = preload("res://game/humans/police_bullet.tscn")
+const PoliceAudio = preload("res://game/humans/police_audio.gd")
+const COMBAT_TURN_RATE: float = deg_to_rad(120.0)
 
 @export var ranged: bool = false
 @export var movement_speed: float = 3.7
@@ -17,6 +20,9 @@ const WorldModel = preload("res://game/world/world_model.gd")
 var _balancer: CharacterBody3D
 var _active: bool = false
 var _windup_left: float = 0.0
+var _ranged_attack_pending: bool = false
+var _shot_committed: bool = false
+var _shot_direction: Vector3 = Vector3.ZERO
 var _cooldown_left: float = 1.0
 var _aim: Vector3
 var _attack_impact_radius: float = 1.8
@@ -33,6 +39,7 @@ var _warning_material: StandardMaterial3D
 var _remains_parent: Node3D
 var _ground_position: Callable
 var _model_dimensions: Vector3
+var _bullets: Array[Node3D] = []
 @onready var drainable: Drainable = $Drainable
 @onready var _warning: MeshInstance3D = $Warning
 @onready var _navigation: NavigationAgent3D = $NavigationAgent3D
@@ -73,9 +80,16 @@ func _ready() -> void:
 func stop() -> void:
 	_active = false
 	cancel_attack()
+	for bullet: Node3D in _bullets:
+		if is_instance_valid(bullet):
+			bullet.queue_free()
+	_bullets.clear()
 
 func cancel_attack() -> void:
 	_windup_left = 0.0
+	_ranged_attack_pending = false
+	_shot_committed = false
+	_shot_direction = Vector3.ZERO
 	_cooldown_left = maxf(_cooldown_left, 0.8)
 	velocity = Vector3.ZERO
 	if is_instance_valid(_warning):
@@ -99,13 +113,17 @@ func _physics_process(delta: float) -> void:
 			_target_left = 0.0
 		_returning = true
 		cancel_attack()
-	if _windup_left > 0.0:
-		if not _target_available():
+	if _windup_left > 0.0 or _ranged_attack_pending:
+		if not _shot_committed and not _target_available():
 			cancel_attack()
 			return
-		_windup_left = maxf(0.0, _windup_left - delta)
-		_warning_material.albedo_color = Color("ff5948") if _windup_left < windup * 0.4 else Color("ffc24b")
 		_move(Vector3.ZERO, delta)
+		_windup_left = maxf(0.0, _windup_left - delta)
+		if ranged:
+			if not _shot_committed and _windup_left <= maxf(0.05, windup) * 0.5:
+				_commit_shot()
+		else:
+			_warning_material.albedo_color = Color("ff5948") if _windup_left < windup * 0.4 else Color("ffc24b")
 		if _windup_left <= 0.0:
 			_resolve_attack()
 		return
@@ -121,15 +139,21 @@ func _physics_process(delta: float) -> void:
 			_move(_navigate(home_position, delta) * movement_speed, delta)
 			return
 	if distance <= _effective_attack_range() and _cooldown_left <= 0.0 and _target_available() and _has_line_of_sight(target):
-		var aim_point: Vector3 = _combat_target(global_position)
-		_aim = Vector3(aim_point.x, _ground_height(aim_point) + 0.06, aim_point.z)
-		_attack_impact_radius = impact_radius + _melee_growth_reach()
-		var disc: CylinderMesh = _warning.mesh as CylinderMesh
-		disc.top_radius = _attack_impact_radius
-		disc.bottom_radius = _attack_impact_radius
-		_warning.global_position = _aim
-		_warning.visible = true
+		if ranged:
+			_aim = _combat_target(_visual.get_muzzle_position())
+		else:
+			var aim_point: Vector3 = _combat_target(global_position)
+			_aim = Vector3(aim_point.x, _ground_height(aim_point) + 0.06, aim_point.z)
+			_attack_impact_radius = impact_radius + _melee_growth_reach()
+			var disc: CylinderMesh = _warning.mesh as CylinderMesh
+			disc.top_radius = _attack_impact_radius
+			disc.bottom_radius = _attack_impact_radius
+			_warning.global_position = _aim
+			_warning.visible = true
 		_windup_left = maxf(0.05, windup)
+		_ranged_attack_pending = ranged
+		_shot_committed = false
+		_shot_direction = Vector3.ZERO
 		_move(Vector3.ZERO, delta)
 		return
 	var direction: Vector3 = offset.normalized()
@@ -178,11 +202,18 @@ func _move(horizontal: Vector3, delta: float) -> void:
 	else:
 		velocity.y = 0.0
 	move_and_slide()
-	var facing: Vector3 = _balancer.global_position - global_position if _windup_left > 0.0 else horizontal
+	var attacking: bool = _windup_left > 0.0 or _ranged_attack_pending
+	var facing: Vector3 = _balancer.global_position - global_position if attacking else horizontal
+	if ranged and attacking:
+		facing = Vector3.ZERO if _shot_committed else _balancer.global_position - global_position
 	facing.y = 0.0
 	if not facing.is_zero_approx():
-		_visual.rotation.y = lerp_angle(_visual.rotation.y, atan2(-facing.x, -facing.z), minf(1.0, delta * 10.0))
-	_visual.update_pose(horizontal, _windup_left > 0.0, delta)
+		if ranged and attacking:
+			var tracking_delta: float = minf(delta, maxf(0.0, _windup_left - maxf(0.05, windup) * 0.5))
+			_visual.global_rotation.y = rotate_toward(_visual.global_rotation.y, atan2(-facing.x, -facing.z), COMBAT_TURN_RATE * tracking_delta)
+		else:
+			_visual.rotation.y = lerp_angle(_visual.rotation.y, atan2(-facing.x, -facing.z), minf(1.0, delta * 10.0))
+	_visual.update_pose(horizontal, attacking, delta)
 
 func _steer(direction: Vector3, delta: float) -> Vector3:
 	if direction.is_zero_approx():
@@ -227,11 +258,22 @@ func _effective_attack_range() -> float:
 	return attack_range + _melee_growth_reach()
 
 func _resolve_attack() -> void:
+	var shot_committed: bool = _shot_committed
+	var shot_direction: Vector3 = _shot_direction
+	_ranged_attack_pending = false
+	_shot_committed = false
+	_shot_direction = Vector3.ZERO
 	_warning.visible = false
 	_cooldown_left = cooldown
-	if not _active or not _target_available():
+	if not _active or not is_instance_valid(_balancer):
+		return
+	if not shot_committed and not _target_available():
 		return
 	if not bool(_balancer.get("gameplay_enabled")) or float(_balancer.get("health")) <= 0.0:
+		return
+	if ranged:
+		if shot_committed:
+			_fire_bullet(shot_direction)
 		return
 	var footprint: Vector3 = _combat_target(_aim)
 	var offset: Vector3 = footprint - _aim
@@ -241,6 +283,26 @@ func _resolve_attack() -> void:
 	reach.y = 0.0
 	if offset.length() <= _attack_impact_radius and reach.length() <= _effective_attack_range() and _has_line_of_sight(reach_target):
 		_balancer.call("take_damage", damage)
+
+func _commit_shot() -> void:
+	var origin: Vector3 = _visual.get_muzzle_position()
+	_aim = _combat_target(origin)
+	var offset: Vector3 = _aim - origin
+	if Vector2(offset.x, offset.z).is_zero_approx():
+		offset = _balancer.global_position + Vector3.UP * 1.1 * float(_balancer.get("size")) - origin
+	var pitch: float = atan2(offset.y, Vector2(offset.x, offset.z).length())
+	var forward: Vector3 = Vector3(-sin(_visual.global_rotation.y), 0.0, -cos(_visual.global_rotation.y))
+	_shot_direction = (forward * cos(pitch) + Vector3.UP * sin(pitch)).normalized()
+	_shot_committed = true
+
+func _fire_bullet(direction: Vector3) -> void:
+	var origin: Vector3 = _visual.get_muzzle_position()
+	var bullet: Node3D = POLICE_BULLET.instantiate() as Node3D
+	get_parent().add_child(bullet)
+	bullet.configure(_balancer, origin, direction, damage)
+	_bullets = _bullets.filter(func(existing: Node3D) -> bool: return is_instance_valid(existing))
+	_bullets.append(bullet)
+	PoliceAudio.play_shot(get_parent(), origin)
 
 func _on_collapsed() -> void:
 	stop()

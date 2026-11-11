@@ -3,6 +3,7 @@ extends RefCounted
 const Scenery = preload("res://game/demo/targets/demo_scenery.gd")
 const Target = preload("res://game/demo/targets/demo_target.gd")
 const DepletionEffect = preload("res://game/draining/depletion_effect.gd")
+const Scaling = preload("res://game/draining/drain_scaling.gd")
 const CityAssets = preload("res://game/demo/city/city_assets.gd")
 const ROOT: String = "res://available-assets/retro3d-assets/"
 const Forest = preload("res://game/demo/world/forest_assets.gd")
@@ -19,6 +20,15 @@ static func instantiate_target(kind: StringName, dimensions: Vector3) -> Node3D:
 	if String(kind).contains("tree"):
 		wrapper.blocking = true
 	wrapper.configure_drain()
+	match kind:
+		&"tree", &"tree_alt", &"pine", &"forest_tree1", &"forest_tree2", &"forest_tree3", &"forest_tree4":
+			wrapper.drainable.drain_speed_multiplier = 3.0
+		&"house1", &"house2", &"house3", &"house4", &"house5":
+			wrapper.drainable.drain_speed_multiplier = Scaling.VILLAGE_HOUSE_DRAIN_MULTIPLIER
+		&"city_highrise_1", &"city_highrise_2", &"city_highrise_3", &"city_tower_1", &"city_tower_2", &"city_tower_3", &"city_tower_4", &"city_plaza_tower", &"city_landmark":
+			wrapper.drainable.drain_speed_multiplier = 2.0
+		_:
+			pass
 	return wrapper
 
 static func instantiate_scenery(kind: StringName, dimensions: Vector3) -> Node3D:

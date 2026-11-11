@@ -39,6 +39,7 @@ var health: float = 100.0
 var movement_multiplier: float = 1.0
 var reach_multiplier: float = 1.0
 var rate_multiplier: float = 1.0
+var _volume_drain_active: bool = false
 var _geometry_update_pending: bool = false
 var _absorption_bounds: AABB
 var _absorption_bounds_ready: bool = false
@@ -58,7 +59,8 @@ var effective_drain_reach: float:
 		return maxf(raw, 0.0) if is_finite(raw) else base_drain_reach
 var effective_drain_rate: float:
 	get:
-		var raw: float = drain_rate_per_scale * size * rate_multiplier
+		var base_rate: float = Scaling.drain_rate_for_volume(volume) if _volume_drain_active else drain_rate_per_scale * size
+		var raw: float = base_rate * rate_multiplier
 		return maxf(raw, 0.0) if is_finite(raw) else 0.0
 @onready var camera: Camera3D = $CameraRig/SpringArm3D/Camera3D
 @onready var drain_area: Area3D = $DrainArea
@@ -144,6 +146,12 @@ func set_gameplay_enabled(enabled: bool) -> void:
 	drain_area.enabled = gameplay_enabled
 	drain_vfx.set_enabled(gameplay_enabled)
 	drain_audio.set_enabled(gameplay_enabled)
+
+func activate_volume_drain() -> void:
+	if _volume_drain_active:
+		return
+	_volume_drain_active = true
+	_refresh_growth()
 
 func gain_life(amount: float) -> void:
 	if not is_finite(amount) or amount <= 0.0 or health <= 0.0:

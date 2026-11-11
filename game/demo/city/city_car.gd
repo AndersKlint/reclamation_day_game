@@ -49,6 +49,7 @@ func configure_car(variant: int, route: PackedVector3Array = PackedVector3Array(
 	model_yaw = PI
 	blocking = _route.size() < 2
 	configure_drain()
+	drainable.drain_speed_multiplier = 2.0
 
 func configure_traffic(player: CharacterBody3D) -> void:
 	_player = player

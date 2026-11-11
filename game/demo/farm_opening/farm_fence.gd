@@ -1,6 +1,7 @@
 extends Node3D
 
 signal life_absorbed(amount: float)
+signal breached()
 
 const Drainable = preload("res://game/draining/drainable.gd")
 const DepletionEffect = preload("res://game/draining/depletion_effect.gd")
@@ -9,9 +10,11 @@ const WorldModel = preload("res://game/world/world_model.gd")
 
 class FenceDrainable extends Drainable:
 	var unlocked: bool = false
+	var player: CharacterBody3D
 
 	func can_drain(source_volume: float) -> bool:
-		return unlocked and super.can_drain(source_volume)
+		var large_enough: bool = is_instance_valid(player) and float(player.get(&"size")) >= 2.0
+		return (unlocked or large_enough) and super.can_drain(source_volume)
 
 var dimensions: Vector3
 var model_scene: PackedScene
@@ -31,7 +34,7 @@ func _ready() -> void:
 	WorldModel.bind_texture(model, texture)
 	_drainable = FenceDrainable.new()
 	_drainable.name = "Drainable"
-	_drainable.collision_layer = 0
+	_drainable.collision_layer = 8
 	_drainable.collision_mask = 0
 	_drainable.monitoring = false
 	add_child(_drainable)
@@ -68,11 +71,12 @@ func _ready() -> void:
 	add_child(body)
 
 
+func configure(player: CharacterBody3D) -> void:
+	_drainable.player = player
+
+
 func unlock() -> void:
-	if _drainable.unlocked:
-		return
 	_drainable.unlocked = true
-	_drainable.set_deferred(&"collision_layer", 8)
 
 
 func _on_life_absorbed(amount: float) -> void:
@@ -89,4 +93,11 @@ func _start_depletion() -> void:
 
 
 func _clear_collision() -> void:
-	_barrier.set_deferred(&"disabled", true)
+	_disable_barrier.call_deferred()
+
+
+func _disable_barrier() -> void:
+	if _barrier.disabled:
+		return
+	_barrier.disabled = true
+	breached.emit()

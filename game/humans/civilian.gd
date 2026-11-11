@@ -37,7 +37,7 @@ func configure(balancer: CharacterBody3D, model: PackedScene) -> void:
 	var library: AnimationLibrary = _animation.get_animation_library("").duplicate() as AnimationLibrary
 	_animation.remove_animation_library("")
 	_animation.add_animation_library("", library)
-	for clip: StringName in [&"Idle", &"Walk", &"Flee", &"Cower"]:
+	for clip: StringName in [&"Idle", &"Stroll", &"Flee", &"Cower"]:
 		var animation: Animation = _animation.get_animation(clip).duplicate() as Animation
 		animation.loop_mode = Animation.LOOP_LINEAR
 		_animation.get_animation_library("").add_animation(clip, animation)
@@ -75,7 +75,7 @@ func _enter(next: State) -> void:
 			_animation.play(&"Idle", 0.15)
 		State.STROLL:
 			plan_due = true
-			_animation.play(&"Walk", 0.15)
+			_animation.play(&"Stroll", 0.15)
 		State.STARTLED:
 			_clock = maxf(0.3, _animation.get_animation(&"Startle").length)
 			_animation.play(&"Startle", 0.1)
@@ -97,7 +97,7 @@ func accept_path(path: PackedVector3Array) -> void:
 		else:
 			_animation.play(&"Cower", 0.15)
 	else:
-		_animation.play(&"Flee" if state == State.FLEE else &"Walk", 0.15)
+		_animation.play(&"Flee" if state == State.FLEE else &"Stroll", 0.15)
 
 func _physics_process(delta: float) -> void:
 	if not active or is_queued_for_deletion() or not is_instance_valid(player):

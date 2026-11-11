@@ -4,6 +4,7 @@ signal tier_changed(tier: int)
 signal human_spawned(human: CharacterBody3D)
 
 const HumanScene: PackedScene = preload("res://game/humans/human.tscn")
+const HumanDrainable = preload("res://game/humans/human_drainable.gd")
 
 @export_range(1, 30) var maximum_active: int = 16
 @export_range(1, 30) var early_population: int = 4
@@ -245,6 +246,8 @@ func _spawn_human() -> void:
 
 func _configure_ranged(human: CharacterBody3D) -> void:
 	human.ranged = true
+	var drainable: HumanDrainable = human.get_node("Drainable") as HumanDrainable
+	drainable.configure_police(float(_balancer.get("base_volume")), float(_balancer.call("get_reference_model_height")))
 	match tier:
 		3:
 			human.movement_speed = city_speed

@@ -1,0 +1,38 @@
+[gd_scene load_steps=6 format=3]
+
+[ext_resource type="Script" path="res://game/humans/police_bullet.gd" id="1"]
+
+[sub_resource type="StandardMaterial3D" id="tracer_material"]
+shading_mode = 0
+albedo_color = Color(1, 0.77, 0.25, 1)
+emission_enabled = true
+emission = Color(1, 0.55, 0.08, 1)
+emission_energy_multiplier = 3.0
+
+[sub_resource type="BoxMesh" id="tracer"]
+material = SubResource("tracer_material")
+size = Vector3(0.08, 0.08, 0.65)
+
+[sub_resource type="StandardMaterial3D" id="flash_material"]
+shading_mode = 0
+albedo_color = Color(1, 0.92, 0.56, 1)
+
+[sub_resource type="SphereMesh" id="flash"]
+material = SubResource("flash_material")
+radius = 0.14
+height = 0.28
+radial_segments = 8
+rings = 4
+
+[node name="PoliceBullet" type="Node3D"]
+process_mode = 1
+script = ExtResource("1")
+
+[node name="Tracer" type="MeshInstance3D" parent="."]
+position = Vector3(0, 0, 0.325)
+mesh = SubResource("tracer")
+cast_shadow = 0
+
+[node name="Flash" type="MeshInstance3D" parent="."]
+mesh = SubResource("flash")
+cast_shadow = 0

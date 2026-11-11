@@ -108,7 +108,7 @@ func _process(delta: float) -> void:
 
 func _update_location() -> void:
 	if _opening != null and not bool(_opening.get(&"is_completed")):
-		interface.update_location("Farm", "Gather wheat life. Fully consume the farmer to open the northern gate.")
+		interface.update_location("Farm", "Gather wheat life. At SIZE 2.00×, drain a perimeter fence and walk through the gap to escape; or fully consume the farmer to open the northern gate.")
 		return
 	match region.get_zone_at(balancer.global_position):
 		&"field":
@@ -136,6 +136,7 @@ func _start_opening() -> void:
 	_opening.call(&"start")
 
 func _on_opening_completed() -> void:
+	balancer.activate_volume_drain()
 	interface.hide_endurance()
 	_queue_resolution()
 

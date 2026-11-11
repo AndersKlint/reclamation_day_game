@@ -4,14 +4,17 @@ const ROOT: String = "res://available-assets/random-packs/characters/Characters_
 
 var skeleton: Skeleton3D
 var _forward: Vector3
+var _down: Vector3
 var _phase: float = 0.0
 var _stride: float = 0.0
 
-func configure(model_path: String, texture_name: String, height: float, monster: bool = false) -> void:
+func configure(model_path: String, texture_name: String, height: float, _monster: bool = false) -> void:
 	var model: Node3D = (load(ROOT + "Models/Rig/" + model_path + ".fbx") as PackedScene).instantiate() as Node3D
 	add_child(model)
 	skeleton = model.find_child("Skeleton3D", true, false) as Skeleton3D
-	_forward = Vector3.BACK if monster else Vector3.RIGHT
+	var model_to_skeleton: Basis = (model.global_transform.affine_inverse() * skeleton.global_transform).basis.orthonormalized().inverse()
+	_forward = model_to_skeleton * Vector3.BACK
+	_down = model_to_skeleton * Vector3.DOWN
 	for node: Node in model.find_children("*", "AnimationPlayer", true, false):
 		(node as AnimationPlayer).active = false
 	skeleton.reset_bone_poses()
@@ -30,7 +33,7 @@ func configure(model_path: String, texture_name: String, height: float, monster:
 		initialized = true
 	var fit: float = height / maxf(bounds.size.y, 0.01)
 	model.scale = Vector3.ONE * fit
-	model.rotation.y = PI if monster else PI / 2.0
+	model.rotation.y = PI
 	var center: Vector3 = bounds.get_center()
 	model.position = -(model.basis * Vector3(center.x, bounds.position.y, center.z))
 	update_pose(Vector3.ZERO, false, false, 0.0)
@@ -44,10 +47,14 @@ func update_pose(horizontal: Vector3, attacking: bool, ranged: bool, delta: floa
 		var arm_forward: float = -swing + sin(_phase * 0.25) * 0.025
 		if attacking:
 			arm_forward = 1.8 if ranged else 1.0 + sin(_phase * 1.5) * 0.65
-		_point_bone(side + "Arm", Vector3.DOWN * (0.25 if attacking else 1.0) + _forward * arm_forward)
-		_point_bone(side + "ForeArm", Vector3.DOWN * (0.1 if attacking else 0.9) + _forward * (1.0 if attacking else 0.15))
-		_point_bone(side + "UpLeg", Vector3.DOWN + _forward * swing)
-		_point_bone(side + "Leg", Vector3.DOWN - _forward * maxf(0.0, swing))
+		_point_bone(side + "Arm", _down * (0.25 if attacking else 1.0) + _forward * arm_forward)
+		_point_bone(side + "ForeArm", _down * (0.1 if attacking else 0.9) + _forward * (1.0 if attacking else 0.15))
+		_point_bone(side + "UpLeg", _down + _forward * swing)
+		var knee_bend: float = maxf(0.0, swing) * 1.8 + 0.04 * _stride
+		_point_bone(side + "Leg", _down + _forward * (swing - knee_bend))
+		var foot: int = skeleton.find_bone("mixamorig_" + side + "Foot")
+		if foot >= 0:
+			_set_bone_global_rotation(foot, skeleton.get_bone_global_rest(foot).basis.orthonormalized().get_rotation_quaternion())
 
 func _point_bone(suffix: String, direction: Vector3) -> void:
 	var bone: int = skeleton.find_bone("mixamorig_" + suffix)
@@ -55,8 +62,11 @@ func _point_bone(suffix: String, direction: Vector3) -> void:
 		return
 	var rest: Basis = skeleton.get_bone_global_rest(bone).basis.orthonormalized()
 	var target: Quaternion = Quaternion(rest.y, direction.normalized()) * rest.get_rotation_quaternion()
+	_set_bone_global_rotation(bone, target)
+
+func _set_bone_global_rotation(bone: int, target: Quaternion) -> void:
 	var parent: int = skeleton.get_bone_parent(bone)
-	var parent_rotation: Quaternion = skeleton.get_bone_global_pose(parent).basis.orthonormalized().get_rotation_quaternion()
+	var parent_rotation: Quaternion = skeleton.get_bone_global_pose(parent).basis.orthonormalized().get_rotation_quaternion() if parent >= 0 else Quaternion.IDENTITY
 	skeleton.set_bone_pose_rotation(bone, parent_rotation.inverse() * target)
 
 func _posed_bounds(mesh: MeshInstance3D, model: Node3D) -> AABB:

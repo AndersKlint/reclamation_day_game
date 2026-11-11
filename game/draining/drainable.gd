@@ -11,6 +11,7 @@ enum State { UNCONFIGURED, DRAINING, COLLAPSED, TRANSFERRED }
 @export_range(0.0, 1000.0, 0.01, "or_greater") var healing_per_life: float = 0.0
 @export var emission_offset: Vector3 = Vector3.ZERO
 @export_range(0.0, 100.0) var emission_radius: float = 0.4
+@export_range(0.01, 100.0, 0.01, "or_greater") var drain_speed_multiplier: float = 1.0
 var capacity: float = 0.0
 var remaining_capacity: float = 0.0
 var original_volume: float = 0.0
@@ -68,14 +69,17 @@ func get_effect_radius() -> float:
 	return maxf(0.0, emission_radius)
 
 func drain(requested_amount: float, source_volume: float, recipient: Node3D) -> float:
-	if not can_drain(source_volume) or not is_finite(requested_amount) or requested_amount <= 0.0 or not is_instance_valid(recipient):
+	if not is_finite(drain_speed_multiplier) or drain_speed_multiplier <= 0.0:
+		return 0.0
+	var effective_amount: float = requested_amount * drain_speed_multiplier
+	if not can_drain(source_volume) or not is_finite(effective_amount) or effective_amount <= 0.0 or not is_instance_valid(recipient):
 		return 0.0
 	collector = recipient
 	var boundary: float = capacity * Scaling.COLLAPSE_LIFE_SHARE
 	var available: float = remaining_capacity - boundary
-	var removed: float = minf(requested_amount, available)
+	var removed: float = minf(effective_amount, available)
 	remaining_capacity = maxf(boundary, remaining_capacity - removed)
-	var collapsed_now: bool = requested_amount >= available
+	var collapsed_now: bool = effective_amount >= available
 	if collapsed_now:
 		remaining_capacity = boundary
 		state = State.COLLAPSED

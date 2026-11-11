@@ -120,7 +120,7 @@ func _cleanup(zone: StringName) -> void:
 		if not is_instance_valid(tank) or tank.is_queued_for_deletion() or _tank_depleted(tank):
 			_tanks.remove_at(index)
 			continue
-		if not in_encounter or _edge_distance(tank.global_position) > RETIRE_DISTANCE:
+		if not bool(tank.call(&"is_engaged")) and (not in_encounter or _edge_distance(tank.global_position) > RETIRE_DISTANCE):
 			_retire_tank(tank)
 			_tanks.remove_at(index)
 
@@ -130,6 +130,8 @@ func _trim_to_limit(limit: int) -> void:
 		var farthest_distance: float = -1.0
 		for index: int in _tanks.size():
 			var tank: CharacterBody3D = _tanks[index]
+			if bool(tank.call(&"is_engaged")):
+				continue
 			var distance: float = _edge_distance(tank.global_position)
 			if distance > farthest_distance:
 				farthest_distance = distance

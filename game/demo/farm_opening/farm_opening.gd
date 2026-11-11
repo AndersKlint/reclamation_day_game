@@ -32,6 +32,8 @@ var _active: bool = false
 var _elapsed: float = 0.0
 var _farmer_spawned: bool = false
 var _farmer_consumed: bool = false
+var _gate_opened: bool = false
+var _has_breach: bool = false
 
 
 func prepare(terrain_height: Callable) -> void:
@@ -59,17 +61,20 @@ func _ready() -> void:
 
 func configure(player: CharacterBody3D) -> void:
 	_player = player
+	for fence: FarmFence in _fences:
+		fence.configure(player)
 
 
 func start() -> void:
-	if is_completed or not is_instance_valid(_player):
+	if _gate_opened or not is_instance_valid(_player):
 		return
 	_active = true
 	process_mode = Node.PROCESS_MODE_PAUSABLE
 	set_process(true)
 	if is_instance_valid(_farmer):
 		_farmer.configure(_player, _remains)
-	status_changed.emit("Drain the wheat to grow. The northern gate is locked." if not _farmer_spawned else "Drain the farmer to open the northern gate.")
+	if not is_completed:
+		status_changed.emit("Grow to 2.00x to drain a fence and escape, or fully absorb the farmer to open the northern gate.")
 
 
 func stop() -> void:
@@ -81,13 +86,17 @@ func stop() -> void:
 
 
 func _process(delta: float) -> void:
-	if not _active or is_completed or not is_instance_valid(_player):
+	if not _active or not is_instance_valid(_player):
 		return
 	if not bool(_player.get(&"gameplay_enabled")) or float(_player.get(&"health")) <= 0.0:
 		return
 	if _farmer_consumed:
 		_open_gate()
 		return
+	if not is_completed and _has_breach:
+		var player_local: Vector3 = to_local(_player.global_position)
+		if absf(player_local.x) > FENCE_HALF or absf(player_local.z) > FENCE_HALF:
+			_complete("You escaped through the fence. Head toward the village; the northern gate remains locked.")
 	if not _farmer_spawned:
 		_elapsed += maxf(delta, 0.0)
 		if _elapsed >= FARMER_DELAY:
@@ -108,7 +117,8 @@ func _spawn_farmer() -> void:
 	var matching_size: float = _farmer.get_model_height() / _player.get_reference_model_height()
 	_farmer.set_minimum_player_volume(float(_player.get(&"base_volume")) * pow(matching_size, 3.0))
 	_farmer.configure(_player, _remains)
-	status_changed.emit("The farmer has arrived. Drain wheat until you can drain him.")
+	if not is_completed:
+		status_changed.emit("The farmer has arrived. Grow to 2.00x to drain a fence and escape, or fully absorb him to open the gate.")
 
 
 func _on_endurance_changed(fraction: float) -> void:
@@ -116,7 +126,8 @@ func _on_endurance_changed(fraction: float) -> void:
 
 
 func _on_farmer_defeated() -> void:
-	status_changed.emit("Absorb the farmer's remaining life to unlock the gate.")
+	if not is_completed:
+		status_changed.emit("Absorb the farmer's remaining life to unlock the gate, or escape through a drained fence at 2.00x.")
 
 
 func _on_farmer_consumed() -> void:
@@ -124,16 +135,32 @@ func _on_farmer_consumed() -> void:
 
 
 func _open_gate() -> void:
-	if is_completed:
+	if _gate_opened:
 		return
-	is_completed = true
+	_gate_opened = true
 	_active = false
 	_gate.queue_free()
 	for fence: FarmFence in _fences:
 		fence.unlock()
 	set_process(false)
-	status_changed.emit("The northern gate is open. Follow the lane to the village.")
+	if is_completed:
+		status_changed.emit("The northern gate is now open. Follow the lane to the village.")
+	else:
+		_complete("The northern gate is open. Follow the lane to the village.")
+
+
+func _complete(text: String) -> void:
+	if is_completed:
+		return
+	is_completed = true
+	status_changed.emit(text)
 	completed.emit()
+
+
+func _on_fence_breached() -> void:
+	_has_breach = true
+	if not is_completed:
+		status_changed.emit("A fence gap is open. Move outside the enclosure to escape, or fully absorb the farmer to open the gate.")
 
 
 func _height(x: float, z: float) -> float:
@@ -168,6 +195,7 @@ func _fence_segment(parent: Node3D, center: Vector2, width: float, sideways: boo
 		fence.texture = FENCE_TEXTURE
 		fence.ground_position = _fence_ground_position
 		fence.life_absorbed.connect(_on_fence_life_absorbed)
+		fence.breached.connect(_on_fence_breached)
 		parent.add_child(fence)
 		_fences.append(fence)
 		initial_fence_capacity += fence.initial_capacity
