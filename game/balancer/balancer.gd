@@ -12,6 +12,8 @@ const WorldModel = preload("res://game/world/world_model.gd")
 const PhaseController = preload("res://game/balancer/phase_controller.gd")
 const MAX_UPGRADE_MULTIPLIER: float = 1_000_000.0
 const MAX_ACCUMULATED_MULTIPLIER: float = 1_000_000.0
+const MIN_REDUCTION_MULTIPLIER: float = 1.0e-12
+const MAX_REDUCTION_MULTIPLIER: float = 1.0e100
 const MAX_LIFE: float = 1_000_000_000_000_000_000_000_000_000_000.0
 const BANK_PER_TURN_RATE: float = 0.03
 const MAX_BANK: float = 0.035
@@ -39,6 +41,9 @@ var health: float = 100.0
 var movement_multiplier: float = 1.0
 var reach_multiplier: float = 1.0
 var rate_multiplier: float = 1.0
+var cooldown_multiplier: float = 1.0
+var damage_taken_multiplier: float = 1.0
+var phase_distance_multiplier: float = 1.0
 var _volume_drain_active: bool = false
 var _geometry_update_pending: bool = false
 var _absorption_bounds: AABB
@@ -239,11 +244,12 @@ func adjust_life(amount: float) -> void:
 	growth_changed.emit(life, size)
 
 func take_damage(amount: float) -> void:
-	if amount <= 0.0 or health <= 0.0 or not gameplay_enabled:
+	if not is_finite(amount) or amount <= 0.0 or health <= 0.0 or not gameplay_enabled:
 		return
 	if phase_controller != null and phase_controller.is_invulnerable():
 		return
-	health = maxf(0.0, health - amount)
+	var damage: float = maxf(amount * damage_taken_multiplier, MIN_REDUCTION_MULTIPLIER)
+	health = maxf(0.0, health - damage)
 	var lethal: bool = health <= 0.0
 	if lethal:
 		set_gameplay_enabled(false)
@@ -252,20 +258,28 @@ func take_damage(amount: float) -> void:
 		died.emit()
 
 func apply_upgrade(effects: Dictionary[String, float]) -> void:
+	for effect: float in effects.values():
+		if not is_finite(effect):
+			return
 	var movement: float = effects.get("movement_multiplier", 1.0)
 	var reach: float = effects.get("reach_multiplier", 1.0)
 	var rate: float = effects.get("rate_multiplier", 1.0)
-	if not is_finite(movement) or not is_finite(reach) or not is_finite(rate):
-		return
+	var cooldown: float = effects.get("cooldown_multiplier", 1.0)
+	var damage_taken: float = effects.get("damage_taken_multiplier", 1.0)
+	var phase_distance: float = effects.get("phase_distance_multiplier", 1.0)
 	movement_multiplier = clampf(movement_multiplier * clampf(movement, 0.01, MAX_UPGRADE_MULTIPLIER), 0.01, MAX_ACCUMULATED_MULTIPLIER)
 	reach_multiplier = clampf(reach_multiplier * clampf(reach, 0.01, MAX_UPGRADE_MULTIPLIER), 0.01, MAX_ACCUMULATED_MULTIPLIER)
 	rate_multiplier = clampf(rate_multiplier * clampf(rate, 0.01, MAX_UPGRADE_MULTIPLIER), 0.01, MAX_ACCUMULATED_MULTIPLIER)
+	cooldown_multiplier = clampf(cooldown_multiplier * clampf(cooldown, MIN_REDUCTION_MULTIPLIER, MAX_REDUCTION_MULTIPLIER), MIN_REDUCTION_MULTIPLIER, MAX_REDUCTION_MULTIPLIER)
+	damage_taken_multiplier = clampf(damage_taken_multiplier * clampf(damage_taken, MIN_REDUCTION_MULTIPLIER, MAX_REDUCTION_MULTIPLIER), MIN_REDUCTION_MULTIPLIER, MAX_REDUCTION_MULTIPLIER)
+	phase_distance_multiplier = clampf(phase_distance_multiplier * clampf(phase_distance, 0.01, MAX_UPGRADE_MULTIPLIER), 0.01, MAX_ACCUMULATED_MULTIPLIER)
 	_refresh_growth()
 
 func _refresh_growth() -> void:
 	visuals.scale = Vector3.ONE * size
 	smoke.configure(size)
 	if phase_controller != null:
+		phase_controller.set_upgrade_multipliers(cooldown_multiplier, phase_distance_multiplier)
 		phase_controller.set_body_size(size)
 	collection_point.position.y = 1.25 * size
 	drain_area.source_volume = volume

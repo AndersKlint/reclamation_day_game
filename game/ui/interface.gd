@@ -1,9 +1,9 @@
 extends CanvasLayer
 
-const UpgradeDefinition = preload("res://game/upgrades/upgrade_definition.gd")
+const UpgradeOffer = preload("res://game/upgrades/upgrade_offer.gd")
+const UpgradeVariant = preload("res://game/upgrades/upgrade_variant.gd")
 
-signal upgrade_selected(definition: UpgradeDefinition)
-signal upgrade_batch_selected(definition: UpgradeDefinition)
+signal upgrade_selected(offer: UpgradeOffer)
 signal pause_requested()
 signal resume_requested()
 signal retry_requested()
@@ -23,6 +23,9 @@ var _opening_status: Label
 var _controls_label: Label
 var _overlay: ColorRect
 var _menu: VBoxContainer
+var _menu_panel: PanelContainer
+var _menu_scroll: ScrollContainer
+var _showing_upgrades: bool = false
 
 
 func _ready() -> void:
@@ -82,6 +85,7 @@ func _ready() -> void:
 	_root.add_child(_overlay)
 	_overlay.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	var scroll := ScrollContainer.new()
+	_menu_scroll = scroll
 	_overlay.add_child(scroll)
 	scroll.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	scroll.offset_left = 28
@@ -89,15 +93,21 @@ func _ready() -> void:
 	scroll.offset_right = -28
 	scroll.offset_bottom = -28
 	scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+	scroll.follow_focus = true
 	var center := CenterContainer.new()
 	center.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	center.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	scroll.add_child(center)
 	var card := PanelContainer.new()
+	_menu_panel = card
+	card.custom_minimum_size.x = 720.0
+	card.custom_maximum_size.x = 820.0
+	card.propagate_maximum_size = true
 	center.add_child(card)
 	_menu = VBoxContainer.new()
 	_menu.add_theme_constant_override("separation", 16)
 	card.add_child(_menu)
+	_root.resized.connect(_resize_upgrade_menu)
 	update_health(100.0, 100.0)
 	update_growth(0.0, 1.0, 40.0)
 	update_progress(0.0, 0.0)
@@ -159,24 +169,30 @@ func set_opening_status(text: String) -> void:
 	_opening_status.visible = not text.is_empty()
 
 
-func show_upgrade_choices(definitions: Array[UpgradeDefinition], pending_count: int = 1) -> void:
+func show_upgrade_choices(offers: Array[UpgradeOffer], pending_count: int = 1) -> void:
 	_clear_menu()
-	_label(_menu, "The shadow deepens", 28)
+	_showing_upgrades = true
+	_menu_scroll.vertical_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+	_resize_upgrade_menu()
+	_centered_label(_menu, "The shadow deepens", 28)
 	if pending_count > 1:
-		_label(_menu, "%d growth choices are queued. Take one, or apply a single path to all %d." % [pending_count, pending_count])
+		_centered_label(_menu, "%d growth choices are queued. Choose one upgrade for each growth." % pending_count)
 	else:
-		_label(_menu, "Choose what remains with you. Each choice stacks multiplicatively.")
+		_centered_label(_menu, "Choose what remains with you.")
+	var choices := HBoxContainer.new()
+	choices.add_theme_constant_override("separation", 16)
+	choices.custom_minimum_size.y = 360.0
+	_menu.add_child(choices)
+	var buttons: Array[Button] = []
 	var focus_target: Button = null
-	for definition: UpgradeDefinition in definitions:
-		if definition == null:
-			continue
-		var choice := _button(_menu, definition.title + "\n" + definition.description,
-			_select_upgrade.bind(definition))
+	for offer: UpgradeOffer in offers:
+		var choice: Button = _upgrade_card(choices, offer)
+		buttons.append(choice)
 		if focus_target == null:
 			focus_target = choice
-		if pending_count > 1:
-			_button(_menu, "Apply %s to all %d queued growths" % [definition.title, pending_count],
-				_select_upgrade_batch.bind(definition))
+	for index: int in buttons.size():
+		buttons[index].focus_neighbor_left = buttons[index].get_path_to(buttons[posmod(index - 1, buttons.size())])
+		buttons[index].focus_neighbor_right = buttons[index].get_path_to(buttons[(index + 1) % buttons.size()])
 	_overlay.show()
 	if focus_target != null:
 		focus_target.grab_focus()
@@ -212,25 +228,94 @@ func hide_overlays() -> void:
 
 
 func _clear_menu() -> void:
+	_showing_upgrades = false
+	_menu_panel.custom_minimum_size.x = 720.0
+	_menu_panel.custom_maximum_size.x = 820.0
+	_menu_scroll.vertical_scroll_mode = ScrollContainer.SCROLL_MODE_AUTO
 	for child: Node in _menu.get_children():
 		_menu.remove_child(child)
 		child.queue_free()
 
 
-func _select_upgrade(definition: UpgradeDefinition) -> void:
-	_disable_choice_buttons()
-	upgrade_selected.emit(definition)
+func _resize_upgrade_menu() -> void:
+	if not _showing_upgrades:
+		return
+	var width: float = minf(1120.0, _root.size.x - 56.0)
+	_menu_panel.custom_minimum_size.x = width
+	_menu_panel.custom_maximum_size.x = width
 
 
-func _select_upgrade_batch(definition: UpgradeDefinition) -> void:
+func _select_upgrade(offer: UpgradeOffer) -> void:
 	_disable_choice_buttons()
-	upgrade_batch_selected.emit(definition)
+	upgrade_selected.emit(offer)
 
 
 func _disable_choice_buttons() -> void:
-	for child: Node in _menu.get_children():
-		if child is Button:
-			child.disabled = true
+	for child: Node in _menu.find_children("*", "BaseButton", true, false):
+		(child as BaseButton).disabled = true
+
+
+func _upgrade_card(parent: HBoxContainer, offer: UpgradeOffer) -> Button:
+	var rarity_name: String
+	var rarity_color: Color
+	match offer.variant.rarity:
+		UpgradeVariant.Rarity.COMMON:
+			rarity_name = "Common"
+			rarity_color = Color("a6adb4")
+		UpgradeVariant.Rarity.UNCOMMON:
+			rarity_name = "Uncommon"
+			rarity_color = Color("75c98b")
+		UpgradeVariant.Rarity.EPIC:
+			rarity_name = "Epic"
+			rarity_color = Color("bf90ef")
+		UpgradeVariant.Rarity.LEGENDARY:
+			rarity_name = "Legendary"
+			rarity_color = Color("e8c35f")
+		_:
+			rarity_name = "Unknown"
+			rarity_color = Color.WHITE
+	var card := Button.new()
+	card.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	card.focus_mode = Control.FOCUS_ALL
+	card.mouse_default_cursor_shape = Control.CURSOR_POINTING_HAND
+	card.pressed.connect(_select_upgrade.bind(offer))
+	for state: String in ["normal", "hover", "pressed", "focus", "disabled"]:
+		var style := StyleBoxFlat.new()
+		style.bg_color = Color("1d2926")
+		if state == "hover":
+			style.bg_color = Color("35483e")
+		elif state == "pressed":
+			style.bg_color = Color("111c19")
+		elif state == "focus":
+			style.bg_color = Color.TRANSPARENT
+		style.border_color = rarity_color
+		style.set_border_width_all(5 if state == "focus" else 3)
+		card.add_theme_stylebox_override(state, style)
+	parent.add_child(card)
+	var margins := MarginContainer.new()
+	margins.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	card.add_child(margins)
+	margins.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	for edge: String in ["left", "top", "right", "bottom"]:
+		margins.add_theme_constant_override("margin_" + edge, 20)
+	var content := VBoxContainer.new()
+	content.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	content.alignment = BoxContainer.ALIGNMENT_CENTER
+	content.add_theme_constant_override("separation", 12)
+	margins.add_child(content)
+	_centered_label(content, offer.definition.title, 22)
+	var rarity_label: Label = _centered_label(content, rarity_name, 16)
+	rarity_label.add_theme_color_override("font_color", rarity_color)
+	_centered_label(content, offer.definition.flavor_text, 16)
+	_centered_label(content, offer.variant.get_description())
+	return card
+
+
+func _centered_label(parent: Node, text: String, font_size: int = 18) -> Label:
+	var label: Label = _label(parent, text, font_size)
+	label.custom_minimum_size.x = 0.0
+	label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	return label
 
 
 func _format_amount(value: float) -> String:
@@ -253,9 +338,7 @@ func _format_amount(value: float) -> String:
 
 
 func _emit_menu_request(request: Signal) -> void:
-	for child: Node in _menu.get_children():
-		if child is Button:
-			child.disabled = true
+	_disable_choice_buttons()
 	request.emit()
 
 

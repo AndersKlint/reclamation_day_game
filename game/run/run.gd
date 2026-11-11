@@ -1,14 +1,12 @@
 extends Node3D
 
-const UpgradeDefinition = preload("res://game/upgrades/upgrade_definition.gd")
+const UpgradeOffer = preload("res://game/upgrades/upgrade_offer.gd")
 const Tracker = preload("res://game/upgrades/upgrade_tracker.gd")
 const GameplaySfx = preload("res://game/run/gameplay_sfx.gd")
 const HitFeedback = preload("res://game/ui/hit_feedback.gd")
 const PhaseController = preload("res://game/balancer/phase_controller.gd")
 
 enum State { RUNNING, PAUSED, CHOOSING, FAILED, REBIRTH, FINISHED }
-
-const MAX_BATCH_APPLICATIONS: int = 512
 
 @export_range(0.1, 1.0) var completion_ratio: float = 0.9
 @export_range(0.5, 10.0) var rebirth_duration: float = 4.0
@@ -63,7 +61,6 @@ func _ready() -> void:
 	balancer.died.connect(_queue_resolution)
 	region.progress_changed.connect(_on_progress_changed)
 	interface.upgrade_selected.connect(_on_upgrade_selected)
-	interface.upgrade_batch_selected.connect(_on_upgrade_batch_selected)
 	interface.pause_requested.connect(_on_pause_requested)
 	interface.resume_requested.connect(_on_resume_requested)
 	interface.retry_requested.connect(_on_retry_requested)
@@ -211,35 +208,19 @@ func _resolve_update() -> void:
 		_hit_feedback.cancel()
 		balancer.set_gameplay_enabled(false)
 		get_tree().paused = true
-		interface.show_upgrade_choices(upgrades.options, upgrades.pending_rewards)
+		interface.show_upgrade_choices(upgrades.get_or_create_offers(), upgrades.pending_rewards)
 	elif get_tree().paused:
 		_enter_running()
 	else:
 		_start_escalation()
 
-func _on_upgrade_selected(definition: UpgradeDefinition) -> void:
-	if state != State.CHOOSING or definition == null or not upgrades.options.has(definition):
+func _on_upgrade_selected(offer: UpgradeOffer) -> void:
+	if state != State.CHOOSING or offer == null:
 		return
-	if not upgrades.consume_pending():
-		return
-	state = State.RUNNING
-	balancer.apply_upgrade(definition.effects)
-	_refresh_growth_display()
-	interface.hide_overlays()
-	_queue_resolution()
-
-func _on_upgrade_batch_selected(definition: UpgradeDefinition) -> void:
-	if state != State.CHOOSING or definition == null or not upgrades.options.has(definition):
-		return
-	if not upgrades.has_pending():
-		return
-	var queued: int = upgrades.consume_all_pending()
-	if queued <= 0:
+	if not upgrades.select_offer(offer):
 		return
 	state = State.RUNNING
-	# Debug-inflated queues cannot stall a frame; accumulated multipliers saturate long before this bound.
-	for _index: int in mini(queued, MAX_BATCH_APPLICATIONS):
-		balancer.apply_upgrade(definition.effects)
+	balancer.apply_upgrade(offer.variant.get_effects())
 	_refresh_growth_display()
 	interface.hide_overlays()
 	_queue_resolution()

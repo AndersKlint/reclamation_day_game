@@ -9,6 +9,8 @@ enum State { READY, TRAVELLING, COOLDOWN }
 
 const PhaseVfx = preload("res://game/balancer/phase_vfx.gd")
 const PhaseAudio = preload("res://game/balancer/phase_audio.gd")
+const MIN_COOLDOWN: float = 1.0e-12
+const MAX_COOLDOWN: float = 1.0e100
 
 @export var travel_time: float = 0.18
 @export var travel_distance: float = 3.5
@@ -19,6 +21,8 @@ var _travel_remaining: float = 0.0
 var _body_size: float = 1.0
 var _travel_velocity: Vector3 = Vector3.ZERO
 var _cooldown_remaining: float = 0.0
+var _cooldown_multiplier: float = 1.0
+var _distance_multiplier: float = 1.0
 var _direction: Vector3 = Vector3.ZERO
 var _reaper: Node3D
 var _reaper_visible: bool = true
@@ -43,6 +47,19 @@ func set_body_size(body_size: float) -> void:
 	if _vfx != null:
 		_vfx.configure(_body_size)
 
+func set_upgrade_multipliers(cooldown: float, distance: float) -> void:
+	if not is_finite(cooldown) or not is_finite(distance):
+		return
+	_distance_multiplier = clampf(distance, 0.01, 1_000_000.0)
+	var next_cooldown: float = clampf(cooldown, MIN_COOLDOWN, MAX_COOLDOWN)
+	if next_cooldown == _cooldown_multiplier:
+		return
+	var remaining_ratio: float = get_cooldown_remaining_ratio()
+	_cooldown_multiplier = next_cooldown
+	if _state == State.COOLDOWN:
+		_cooldown_remaining = remaining_ratio * get_cooldown_duration()
+	cooldown_changed.emit(_cooldown_remaining, get_cooldown_duration())
+
 func try_activate(direction: Vector3) -> bool:
 	if _state != State.READY:
 		return false
@@ -51,7 +68,7 @@ func try_activate(direction: Vector3) -> bool:
 		return false
 	_direction = flat.normalized()
 	_travel_remaining = maxf(travel_time, 0.001)
-	_travel_velocity = _direction * (maxf(travel_distance, 0.0) * _body_size / _travel_remaining)
+	_travel_velocity = _direction * (maxf(travel_distance, 0.0) * _distance_multiplier * _body_size / _travel_remaining)
 	_state = State.TRAVELLING
 	_begin_presentation()
 	if _audio != null:
@@ -110,7 +127,8 @@ func get_cooldown_remaining() -> float:
 	return _cooldown_remaining
 
 func get_cooldown_duration() -> float:
-	return maxf(cooldown_seconds, 0.0)
+	var base_duration: float = cooldown_seconds if is_finite(cooldown_seconds) else 1.0
+	return clampf(base_duration * _cooldown_multiplier, MIN_COOLDOWN, MAX_COOLDOWN)
 
 func get_cooldown_remaining_ratio() -> float:
 	var duration: float = get_cooldown_duration()

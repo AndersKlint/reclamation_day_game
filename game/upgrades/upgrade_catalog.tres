@@ -1,0 +1,19 @@
+[gd_resource type="Resource" script_class="UpgradeCatalog" load_steps=10 format=3]
+
+[ext_resource type="Script" path="res://game/upgrades/upgrade_catalog.gd" id="1"]
+[ext_resource type="Script" path="res://game/upgrades/upgrade_definition.gd" id="2"]
+[ext_resource type="Resource" path="res://game/upgrades/drain_speed.tres" id="3"]
+[ext_resource type="Resource" path="res://game/upgrades/drain_radius.tres" id="4"]
+[ext_resource type="Resource" path="res://game/upgrades/movement_speed.tres" id="5"]
+[ext_resource type="Resource" path="res://game/upgrades/phase_cooldown.tres" id="6"]
+[ext_resource type="Resource" path="res://game/upgrades/resistance.tres" id="7"]
+[ext_resource type="Resource" path="res://game/upgrades/phase_distance.tres" id="8"]
+[ext_resource type="Resource" path="res://game/upgrades/movement_speed_triple.tres" id="9"]
+
+[resource]
+script = ExtResource("1")
+definitions = Array[ExtResource("2")]([ExtResource("3"), ExtResource("4"), ExtResource("5"), ExtResource("6"), ExtResource("7"), ExtResource("8"), ExtResource("9")])
+common_weight = 59.0
+uncommon_weight = 30.0
+epic_weight = 9.0
+legendary_weight = 2.0

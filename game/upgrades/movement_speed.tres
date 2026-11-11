@@ -1,0 +1,43 @@
+[gd_resource type="Resource" script_class="UpgradeDefinition" load_steps=10 format=3]
+
+[ext_resource type="Script" path="res://game/upgrades/upgrade_definition.gd" id="1"]
+[ext_resource type="Script" path="res://game/upgrades/upgrade_variant.gd" id="2"]
+[ext_resource type="Script" path="res://game/upgrades/upgrade_stat_effect.gd" id="3"]
+
+[sub_resource type="Resource" id="CommonEffect"]
+script = ExtResource("3")
+stat = 2
+percentage = 15.0
+
+[sub_resource type="Resource" id="UncommonEffect"]
+script = ExtResource("3")
+stat = 2
+percentage = 20.0
+
+[sub_resource type="Resource" id="EpicEffect"]
+script = ExtResource("3")
+stat = 2
+percentage = 30.0
+
+[sub_resource type="Resource" id="Common"]
+script = ExtResource("2")
+rarity = 0
+effects = Array[ExtResource("3")]([SubResource("CommonEffect")])
+
+[sub_resource type="Resource" id="Uncommon"]
+script = ExtResource("2")
+rarity = 1
+effects = Array[ExtResource("3")]([SubResource("UncommonEffect")])
+
+[sub_resource type="Resource" id="Epic"]
+script = ExtResource("2")
+rarity = 2
+effects = Array[ExtResource("3")]([SubResource("EpicEffect")])
+
+[resource]
+script = ExtResource("1")
+id = &"movement_speed"
+title = "Haste"
+flavor_text = "You must consume. Faster."
+repeatable = true
+variants = Array[ExtResource("2")]([SubResource("Common"), SubResource("Uncommon"), SubResource("Epic")])
