@@ -45,6 +45,7 @@ static func build() -> Dictionary:
 		"sidewalk_rects": sidewalk_rects(),
 		"crosswalk_rects": crosswalk_rects(),
 		"pedestrian_points": _pedestrian_points(),
+		"pedestrian_routes": pedestrian_routes(),
 		"spawn_points": _spawn_points(),
 		"parking": _parking(),
 		"traffic_routes": _traffic_routes(),
@@ -328,31 +329,31 @@ static func _street_yaw(x: float, z: float, x0: float, x1: float, z0: float, z1:
 
 static func _pedestrian_points() -> Array[Vector2]:
 	var points: Array[Vector2] = []
-	var offset: float = ROAD_HALF + 2.4
-	for street: float in X_STREETS:
-		for i: int in 26:
-			var z: float = -206.0 - i * 19.0
-			if _near_z_intersection(z):
-				continue
-			points.append(Vector2(street - offset, z))
-			points.append(Vector2(street + offset, z))
-	for street: float in Z_STREETS:
-		for i: int in 20:
-			var x: float = -206.0 + i * 19.0
-			if _near_x_intersection(x):
-				continue
-			points.append(Vector2(x, street - offset))
-			points.append(Vector2(x, street + offset))
-	for x: float in X_STREETS:
-		for z: float in Z_STREETS:
-			for dx: float in [-8.5, 8.5]:
-				for dz: float in [-8.5, 8.5]:
-					points.append(Vector2(x + dx, z + dz))
-	for center: Vector2 in [block_center(1, 0), block_center(3, 3), block_center(1, 2), block_center(2, 1)]:
-		for dx: float in [-18.0, -8.0, 8.0, 18.0]:
-			for dz: float in [-18.0, -8.0, 8.0, 18.0]:
-				points.append(center + Vector2(dx, dz))
+	for route: PackedVector3Array in pedestrian_routes():
+		for point: Vector3 in route:
+			points.append(Vector2(point.x, point.z))
 	return points
+
+static func pedestrian_routes() -> Array[PackedVector3Array]:
+	var routes: Array[PackedVector3Array] = []
+	var inset: float = ROAD_HALF + WALK_WIDTH * 0.5
+	for iz: int in 4:
+		for ix: int in 4:
+			var corners: PackedVector3Array = PackedVector3Array([
+				Vector3(X_STREETS[ix] + inset, 0.0, Z_STREETS[iz] - inset),
+				Vector3(X_STREETS[ix + 1] - inset, 0.0, Z_STREETS[iz] - inset),
+				Vector3(X_STREETS[ix + 1] - inset, 0.0, Z_STREETS[iz + 1] + inset),
+				Vector3(X_STREETS[ix] + inset, 0.0, Z_STREETS[iz + 1] + inset),
+			])
+			var route: PackedVector3Array = PackedVector3Array()
+			for edge: int in 4:
+				var first: Vector3 = corners[edge]
+				var last: Vector3 = corners[(edge + 1) % 4]
+				var steps: int = floori(first.distance_to(last) / 2.4)
+				for step: int in steps:
+					route.append(first.lerp(last, float(step) / float(steps)))
+			routes.append(route)
+	return routes
 
 static func _spawn_points() -> Array[Vector2]:
 	return [
@@ -389,10 +390,10 @@ static func _parking() -> Array[Dictionary]:
 
 static func _traffic_routes() -> Array[PackedVector3Array]:
 	return [
-		_loop(-192.0, 192.0, -700.0, -220.0, 2.8),
-		_loop(-96.0, 96.0, -580.0, -340.0, 2.8),
-		_loop(-96.0, 96.0, -700.0, -460.0, 2.8),
-		_loop(-192.0, 0.0, -460.0, -220.0, 2.8),
+		_loop(-192.0, 192.0, -700.0, -220.0, 1.8),
+		_loop(-96.0, 96.0, -580.0, -340.0, 1.8),
+		_loop(-96.0, 96.0, -700.0, -460.0, 1.8),
+		_loop(-192.0, 0.0, -460.0, -220.0, 1.8),
 	]
 
 static func _tank_routes() -> Array[PackedVector3Array]:

@@ -227,7 +227,7 @@ func _spawn_human() -> void:
 			ranged_chance = city_ranged_fraction
 		elif tier == 4:
 			ranged_chance = downtown_ranged_fraction
-		var ranged: bool = tier >= 1 and _random.randf() < ranged_chance
+		var ranged: bool = tier >= 1 and (tier == 2 or _random.randf() < ranged_chance)
 		var human: CharacterBody3D = HumanScene.instantiate() as CharacterBody3D
 		if ranged:
 			_configure_ranged(human)

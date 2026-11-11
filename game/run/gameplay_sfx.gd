@@ -43,7 +43,7 @@ func play_depletion(style: int, location: Vector3, female: bool, building_collap
 			if building_collapse:
 				_play_building_collapse(location, size)
 			else:
-				_play(RUBBLE, location, -14.0)
+				_play(RUBBLE, location, -7.0, 14.0, 65.0)
 		_:
 			pass
 
@@ -55,12 +55,14 @@ func play_rubble_absorb(size: Vector3) -> void:
 	var weight: float = clampf(sqrt(maxf(size.y, 0.1) / BUILDING_REFERENCE_HEIGHT), 0.5, 1.0)
 	_play(RUBBLE_ABSORB, _player_position(), -11.0 + linear_to_db(weight))
 
-func _play(samples: Array[AudioStream], location: Vector3, volume: float) -> void:
+func _play(samples: Array[AudioStream], location: Vector3, volume: float, unit_size: float = 5.0, max_distance: float = 35.0) -> void:
 	for voice: AudioStreamPlayer3D in _voices:
 		if not voice.playing:
 			voice.global_position = location
 			voice.stream = samples.pick_random()
 			voice.volume_db = volume
+			voice.unit_size = unit_size
+			voice.max_distance = max_distance
 			voice.pitch_scale = randf_range(0.94, 1.06)
 			voice.play()
 			return
@@ -74,7 +76,7 @@ func _play_building_collapse(location: Vector3, size: Vector3) -> void:
 	var gain: float = proximity * proximity * weight
 	var rumble: AudioStreamPlayer3D = _free_building_voice()
 	if rumble != null:
-		_start_building_voice(rumble, BUILDING_RUMBLE, location, -5.0 + linear_to_db(gain), randf_range(0.85, 0.95))
+		_start_building_voice(rumble, BUILDING_RUMBLE, location, -2.0 + linear_to_db(gain), randf_range(0.85, 0.95))
 	var tween: Tween = create_tween()
 	tween.tween_interval(0.4)
 	tween.tween_callback(_play_building_debris.bind(location, gain, size))
@@ -83,12 +85,12 @@ func _play_building_debris(location: Vector3, gain: float, size: Vector3) -> voi
 	var debris: AudioStreamPlayer3D = _free_building_voice()
 	if debris == null:
 		return
-	_start_building_voice(debris, BUILDING_DEBRIS, location, -8.0 + linear_to_db(gain), randf_range(0.9, 1.02))
+	_start_building_voice(debris, BUILDING_DEBRIS, location, -5.0 + linear_to_db(gain), randf_range(0.9, 1.02))
 	if size.y < 20.0 or randf() > 0.6:
 		return
 	var glass: AudioStreamPlayer3D = _free_building_voice()
 	if glass != null:
-		_start_building_voice(glass, BUILDING_GLASS, location, -12.0 + linear_to_db(gain), randf_range(0.95, 1.08))
+		_start_building_voice(glass, BUILDING_GLASS, location, -9.0 + linear_to_db(gain), randf_range(0.95, 1.08))
 
 func _start_building_voice(voice: AudioStreamPlayer3D, samples: Array[AudioStream], location: Vector3, volume: float, pitch: float) -> void:
 	voice.global_position = location

@@ -4,8 +4,9 @@ const CityCar = preload("res://game/demo/city/city_car.gd")
 const CarAssets = preload("res://game/demo/city/car_assets.gd")
 const CityLayout = preload("res://game/demo/city/city_layout.gd")
 
-const MOVING_CAR_COUNT: int = 8
+const MOVING_CAR_COUNT: int = 64
 const MAX_TRAFFIC_ROUTES: int = 4
+const START_CLEARANCE: float = 9.0
 const STAGING_POLICE_COUNT: int = 3
 const TAXI_COUNT: int = 6
 const ACTOR_METHODS: Array[StringName] = [&"configure_car", &"configure_traffic", &"set_active"]
@@ -141,34 +142,64 @@ func _spawn_moving() -> void:
 		push_error("CityTraffic found no usable traffic routes")
 		return
 	var slots_per_route: int = int(ceil(float(MOVING_CAR_COUNT) / float(routes.size())))
+	var starts: PackedVector3Array = PackedVector3Array()
 	for i: int in MOVING_CAR_COUNT:
 		var route_index: int = i % routes.size()
 		var slot: int = int(floor(float(i) / float(routes.size())))
 		var route: PackedVector3Array = routes[route_index]
-		var count: int = route.size()
-		# Routes share waypoints; stagger starts per route and per slot to avoid overlap.
-		var base: int = (route_index * count) / MAX_TRAFFIC_ROUTES
-		var spacing: int = maxi(1, count / slots_per_route)
-		var waypoint: int = (base + slot * spacing) % count
-		var point: Vector3 = route[waypoint]
-		var next: Vector3 = route[(waypoint + 1) % count]
-		var direction: Vector3 = next - point
-		direction.y = 0.0
-		var yaw: float = 0.0
-		if not direction.is_zero_approx():
-			yaw = atan2(-direction.x, -direction.z)
-		var placement: Transform3D = Transform3D(Basis(Vector3.UP, yaw), point)
+		var length: float = _route_length(route)
+		if length <= 0.001:
+			continue
+		var start_distance: float = length * (float(slot) + float(route_index) / float(routes.size())) / float(slots_per_route)
+		var placement: Transform3D = _route_placement(route, start_distance)
+		var found: bool = false
+		for attempt: int in int(ceil(length / START_CLEARANCE)):
+			placement = _route_placement(route, start_distance + float(attempt) * START_CLEARANCE)
+			if _start_is_clear(placement.origin, starts):
+				found = true
+				break
+		if not found:
+			continue
 		var variant: int = CarAssets.TAXI if i % 3 == 0 else (i % CarAssets.CIVILIAN_COUNT)
 		var car: Node3D = _add_car(variant, placement, route)
 		if car == null:
 			continue
+		starts.append(placement.origin)
 		car.call(&"configure_traffic", _player)
 		car.call(&"set_active", false)
 		_moving.append(car)
 	if _moving.size() != MOVING_CAR_COUNT:
 		push_warning("CityTraffic placed %d of %d moving cars" % [_moving.size(), MOVING_CAR_COUNT])
 
+func _route_length(route: PackedVector3Array) -> float:
+	var length: float = 0.0
+	for i: int in route.size():
+		length += route[i].distance_to(route[(i + 1) % route.size()])
+	return length
+
+func _route_placement(route: PackedVector3Array, distance: float) -> Transform3D:
+	var remaining: float = fposmod(distance, _route_length(route))
+	for i: int in route.size():
+		var start: Vector3 = route[i]
+		var end: Vector3 = route[(i + 1) % route.size()]
+		var length: float = start.distance_to(end)
+		if length <= 0.001:
+			continue
+		if remaining < length:
+			var direction: Vector3 = end - start
+			var yaw: float = atan2(-direction.x, -direction.z)
+			return Transform3D(Basis(Vector3.UP, yaw), start.lerp(end, remaining / length))
+		remaining -= length
+	return Transform3D(Basis.IDENTITY, route[0])
+
+func _start_is_clear(point: Vector3, starts: PackedVector3Array) -> bool:
+	for existing: Vector3 in starts:
+		if Vector2(point.x - existing.x, point.z - existing.z).length_squared() < START_CLEARANCE * START_CLEARANCE:
+			return false
+	return true
+
 func _add_car(variant: int, placement: Transform3D, route: PackedVector3Array) -> Node3D:
+	placement.origin = _region.call(&"ground_position", placement.origin)
 	var car: Node3D = CityCar.new() as Node3D
 	if car == null:
 		push_error("CityTraffic could not instantiate CityCar")
@@ -176,6 +207,7 @@ func _add_car(variant: int, placement: Transform3D, route: PackedVector3Array) -
 	car.set(&"ground_position", Callable(_region, &"ground_position"))
 	car.set_meta(&"zone", _region.call(&"get_zone_at", placement.origin))
 	car.call(&"configure_car", variant, route)
+	car.call(&"set_active", false)
 	if not car.has_node("Drainable"):
 		push_error("CityCar.configure_car did not create a Drainable")
 		car.free()
@@ -184,6 +216,7 @@ func _add_car(variant: int, placement: Transform3D, route: PackedVector3Array) -
 	_region.call(&"_register_target", car)
 	# Placement follows attachment so the region transform is applied.
 	car.global_transform = placement
+	car.reset_physics_interpolation()
 	return car
 
 func _validate_actor() -> bool:

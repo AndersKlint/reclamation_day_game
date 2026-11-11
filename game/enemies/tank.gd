@@ -448,7 +448,7 @@ func _create_wreck() -> void:
 		parent.add_child(effect)
 		effect.global_transform = Transform3D(Basis.IDENTITY, global_position)
 		effect.style = DEPLETION_SCRIPT.Style.RUBBLE
-		effect.configure_reward(drainable.take_collapse_life(), drainable.collector)
+		effect.configure_reward(drainable.take_collapse_life(), drainable.collector, drainable.healing_per_life)
 		_visual.reparent(effect, true)
 		effect.configure(_visual, TankAssets.size_for(_heavy), _ground_position)
 		effect.start()

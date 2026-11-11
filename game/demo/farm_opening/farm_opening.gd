@@ -12,6 +12,7 @@ const FENCE: PackedScene = preload("res://available-assets/retro3d-assets/Nature
 const GATE: PackedScene = preload("res://available-assets/retro3d-assets/Nature/Hedge Maze/hedge_maze_pack/misc_models/fences/fence1_double_gate.fbx")
 const FENCE_TEXTURE: Texture2D = preload("res://available-assets/retro3d-assets/Nature/Hedge Maze/hedge_maze_pack/textures/textures2.png")
 const WorldModel = preload("res://game/world/world_model.gd")
+const GATE_SOUND: AudioStream = preload("res://available-assets/sfx/prosoundcollection/Gamemaster Audio - Pro Sound Collection v1.3 - 16bit 48k/Doors/door_creak_long_01.wav")
 const FIELD_SIZE: Vector2 = Vector2(80.0, 80.0)
 const FENCE_HALF: float = 48.0
 const GATE_HALF: float = 8.0
@@ -139,6 +140,7 @@ func _open_gate() -> void:
 		return
 	_gate_opened = true
 	_active = false
+	_play_gate_sound()
 	_gate.queue_free()
 	for fence: FarmFence in _fences:
 		fence.unlock()
@@ -147,6 +149,18 @@ func _open_gate() -> void:
 		status_changed.emit("The northern gate is now open. Follow the lane to the village.")
 	else:
 		_complete("The northern gate is open. Follow the lane to the village.")
+
+func _play_gate_sound() -> void:
+	var voice: AudioStreamPlayer3D = AudioStreamPlayer3D.new()
+	voice.process_mode = Node.PROCESS_MODE_PAUSABLE
+	voice.stream = GATE_SOUND
+	voice.volume_db = -8.0
+	voice.unit_size = 7.0
+	voice.max_distance = 55.0
+	get_parent().add_child(voice)
+	voice.global_position = _gate.global_position
+	voice.finished.connect(voice.queue_free, CONNECT_ONE_SHOT)
+	voice.play()
 
 
 func _complete(text: String) -> void:

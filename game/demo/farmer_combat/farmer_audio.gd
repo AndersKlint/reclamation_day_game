@@ -28,7 +28,7 @@ const SWING_EXCERPTS: Array[Vector2] = [
 	Vector2(29.775, 0.605),
 	Vector2(31.725, 1.015),
 ]
-const WEAPON_VOLUME_DB: float = -15.0
+const WEAPON_VOLUME_DB: float = -8.0
 const EXCERPT_FADE_SECONDS: float = 0.005
 
 var _excerpt_gate: Tween

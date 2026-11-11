@@ -168,6 +168,15 @@ func request_healing(amount: float) -> void:
 	var frame_cap: float = MAX_HEALING_PER_SECOND * maxf(get_physics_process_delta_time(), 0.0)
 	_pending_healing = minf(_pending_healing + amount, frame_cap)
 
+func heal_immediately(amount: float) -> void:
+	if not gameplay_enabled or health <= 0.0 or not is_finite(amount) or amount <= 0.0:
+		return
+	var healed: float = minf(amount, max_health - health)
+	if healed <= 0.0:
+		return
+	health += healed
+	health_changed.emit(health, max_health)
+
 func _consume_pending_healing(delta: float) -> void:
 	var demand: float = _pending_healing
 	_pending_healing = 0.0

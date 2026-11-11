@@ -104,6 +104,12 @@ func get_world_bounds() -> Rect2:
 func get_pedestrian_points() -> Array[Vector3]:
 	return _pedestrian_points.duplicate()
 
+func get_pedestrian_routes() -> Array[PackedVector3Array]:
+	var routes: Array[PackedVector3Array] = []
+	for route: PackedVector3Array in _city_layout["pedestrian_routes"]:
+		routes.append(_route_world(route))
+	return routes
+
 func get_traffic_routes() -> Array[PackedVector3Array]:
 	var routes: Array[PackedVector3Array] = []
 	for route: PackedVector3Array in _traffic_routes:

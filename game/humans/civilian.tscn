@@ -24,3 +24,4 @@ shape = SubResource("body")
 emission_offset = Vector3(0, 1, 0)
 script = ExtResource("3")
 drain_efficiency = 0.15
+healing_per_life = 0.0

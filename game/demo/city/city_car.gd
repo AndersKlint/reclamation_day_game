@@ -17,9 +17,11 @@ const BRAKE: float = 18.0
 const ACCELERATION: float = 6.0
 const WAYPOINT_RADIUS: float = 1.6
 const PROBE_HEIGHT: float = 0.7
-const PROBE_WIDTH: float = 1.2
+const PROBE_MARGIN: float = 0.1
+const STOP_MARGIN: float = 0.35
 const THREAT_RADIUS: float = 10.0
 const TURN_YIELD_DOT: float = 0.94
+const CarAudioScript = preload("res://game/demo/city/car_audio.gd")
 
 enum Motion { PARKED, CRUISE, YIELD }
 
@@ -35,6 +37,7 @@ var _query_body: Area3D
 var _probe_query: PhysicsRayQueryParameters3D
 var _player: CharacterBody3D
 var _motion: Motion = Motion.PARKED
+var _car_audio: Node3D
 
 func configure_car(variant: int, route: PackedVector3Array = PackedVector3Array()) -> void:
 	if drainable != null:
@@ -56,6 +59,9 @@ func configure_traffic(player: CharacterBody3D) -> void:
 
 func set_active(enabled: bool) -> void:
 	_active_requested = enabled
+	var can_move: bool = enabled and not _is_depleted() and _route.size() >= 2
+	if is_instance_valid(_car_audio):
+		_car_audio.call(&"set_enabled", can_move)
 	if _is_depleted() or _route.size() < 2:
 		_car_speed = 0.0
 		_motion = Motion.PARKED
@@ -75,8 +81,12 @@ func _ready() -> void:
 	_priority = get_instance_id()
 	_yield_delay = 0.3 + float(_priority % 5) * 0.12
 	_configure_body()
+	_car_audio = CarAudioScript.new()
+	_car_audio.name = "CarAudio"
+	add_child(_car_audio)
 	drainable.collapsed.connect(_on_car_depleted)
 	var start_active: bool = _route.size() >= 2 and _active_requested
+	_car_audio.call(&"set_enabled", start_active)
 	_motion = Motion.CRUISE if start_active else Motion.PARKED
 	set_physics_process(start_active)
 
@@ -87,11 +97,14 @@ func _physics_process(delta: float) -> void:
 		return
 	if _player != null and (not is_instance_valid(_player) or not bool(_player.get("gameplay_enabled"))):
 		_car_speed = 0.0
+		_car_audio.call(&"set_enabled", false)
 		return
+	_car_audio.call(&"set_enabled", true)
 	if not _route_started:
 		_start_route()
 	_move_along_route(delta)
 	_sync_query_body()
+	_car_audio.call(&"update_speed", _car_speed, delta)
 
 func _configure_body() -> void:
 	var parked_body: StaticBody3D = get_node_or_null("Body") as StaticBody3D
@@ -165,6 +178,8 @@ func _move_along_route(delta: float) -> void:
 	var travel: float = minf(_car_speed * delta, distance)
 	var next_position: Vector3 = global_position + direction * travel
 	next_position.y = lerpf(global_position.y, target.y, clampf(travel / distance, 0.0, 1.0))
+	if ground_position.is_valid():
+		next_position = ground_position.call(next_position)
 	global_position = next_position
 	var yaw: float = atan2(-direction.x, -direction.z)
 	global_rotation.y = lerp_angle(global_rotation.y, yaw, minf(1.0, delta * 6.0))
@@ -189,10 +204,16 @@ func _desired_speed(delta: float, forward: Vector3) -> float:
 	var obstacle: Dictionary = _probe(forward)
 	if not obstacle.is_empty():
 		_note_obstacle(obstacle)
-		var clearance: float = maxf(0.0, global_position.distance_to(obstacle.get("position", global_position)) - FIT_BOUNDS.x * 0.5)
+		if _is_player_threat(forward):
+			_car_audio.call(&"note_obstruction", delta)
+		else:
+			_car_audio.call(&"clear_obstruction", delta)
+		var hit_position: Vector3 = obstacle.get("position", global_position)
+		var clearance: float = maxf(0.0, (hit_position - global_position).dot(forward) - _footprint_extent(forward) - STOP_MARGIN)
 		var safe_speed: float = sqrt(2.0 * BRAKE * clearance)
 		_motion = Motion.YIELD if safe_speed < CRUISE_SPEED else Motion.CRUISE
 		return minf(CRUISE_SPEED, safe_speed)
+	_car_audio.call(&"clear_obstruction", delta)
 	if _yield_left > 0.0:
 		_motion = Motion.YIELD
 		return 0.0
@@ -236,14 +257,24 @@ func _probe(forward: Vector3) -> Dictionary:
 		lateral = Vector3.RIGHT
 	else:
 		lateral = lateral.normalized()
-	for side: float in [-PROBE_WIDTH, -PROBE_WIDTH * 0.5, 0.0, PROBE_WIDTH * 0.5, PROBE_WIDTH]:
+	var half_width: float = _footprint_extent(lateral) + PROBE_MARGIN
+	var nearest: Dictionary = {}
+	var nearest_distance: float = INF
+	for side: float in [-half_width, -half_width * 0.5, 0.0, half_width * 0.5, half_width]:
 		var from: Vector3 = origin + lateral * side
 		_probe_query.from = from
 		_probe_query.to = from + forward * reach
 		var hit: Dictionary = space.intersect_ray(_probe_query)
 		if not hit.is_empty():
-			return hit
-	return {}
+			var hit_position: Vector3 = hit["position"]
+			var distance: float = (hit_position - origin).dot(forward)
+			if distance < nearest_distance:
+				nearest_distance = distance
+				nearest = hit
+	return nearest
+
+func _footprint_extent(direction: Vector3) -> float:
+	return (absf(direction.dot(global_basis.x)) * fitted_size.x + absf(direction.dot(global_basis.z)) * fitted_size.z) * 0.5
 
 func _note_obstacle(hit: Dictionary) -> void:
 	var collider: Object = hit.get("collider")
@@ -261,7 +292,16 @@ func _sync_query_body() -> void:
 func _on_car_depleted() -> void:
 	_car_speed = 0.0
 	_motion = Motion.PARKED
+	_car_audio.call(&"set_enabled", false)
 	set_physics_process(false)
+
+func _clear_collision() -> void:
+	super()
+	if is_instance_valid(_query_body):
+		_query_body.set_deferred(&"collision_layer", 0)
+		var collision: CollisionShape3D = _query_body.get_node_or_null("CollisionShape3D") as CollisionShape3D
+		if collision != null:
+			collision.set_deferred(&"disabled", true)
 
 func _is_depleted() -> bool:
 	return drainable != null and drainable.is_collapsed

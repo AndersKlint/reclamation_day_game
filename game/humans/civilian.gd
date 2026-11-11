@@ -4,6 +4,15 @@ const DEPLETION_EFFECT: PackedScene = preload("res://game/draining/depletion_eff
 const DEPLETION_SCRIPT = preload("res://game/draining/depletion_effect.gd")
 const WorldModel = preload("res://game/world/world_model.gd")
 const Drainable = preload("res://game/draining/drainable.gd")
+const CivilianAudio = preload("res://game/humans/civilian_audio.gd")
+
+const STARTLE_DISTANCE: float = 19.5
+const SAFE_DISTANCE: float = 37.5
+const DISTANT_INTERVAL: float = 0.2
+const FULL_RATE_DISTANCE: float = 70.0
+
+static var _model_libraries: Dictionary = {}
+static var _model_sizes: Dictionary = {}
 
 enum State { IDLE, STROLL, STARTLED, FLEE }
 
@@ -11,6 +20,10 @@ var state: State = State.IDLE
 var player: CharacterBody3D
 var active: bool = false
 var plan_due: bool = false
+var pedestrian_route: PackedVector3Array = PackedVector3Array()
+var route_cursor: int = 0
+var route_direction: int = 1
+var scream_pool: CivilianAudio
 var _clock: float = 0.0
 var _safe_time: float = 0.0
 var _path: PackedVector3Array = PackedVector3Array()
@@ -21,6 +34,10 @@ var _stuck_time: float = 0.0
 var _remains_parent: Node3D
 var _ground_position: Callable
 var _model_dimensions: Vector3
+var _scream_cooldown: float = 0.0
+var _kill_rewarded: bool = false
+var _simulation_delta: float = 0.0
+var _cached_player_radius: float = 0.0
 @onready var _visual: Node3D = $Visual
 @onready var _drainable: Drainable = $Drainable
 
@@ -32,18 +49,26 @@ func configure(balancer: CharacterBody3D, model: PackedScene) -> void:
 	_animation = actor.find_child("AnimationPlayer", true, false) as AnimationPlayer
 	assert(_animation != null, "Civilian model requires AnimationPlayer")
 	_animation.stop()
-	_model_dimensions = WorldModel.bounds(_visual, true).size
+	_animation.callback_mode_process = AnimationMixer.ANIMATION_CALLBACK_MODE_PROCESS_MANUAL
+	if not _model_sizes.has(model):
+		_model_sizes[model] = WorldModel.bounds(_visual, true).size
+	_model_dimensions = _model_sizes[model]
 	_drainable.configure_volume(_model_dimensions * global_basis.get_scale().abs())
-	var library: AnimationLibrary = _animation.get_animation_library("").duplicate() as AnimationLibrary
+	if not _model_libraries.has(model):
+		var library: AnimationLibrary = _animation.get_animation_library("").duplicate() as AnimationLibrary
+		for clip: StringName in [&"Idle", &"Stroll", &"Flee", &"Cower"]:
+			var animation: Animation = _animation.get_animation(clip).duplicate() as Animation
+			animation.loop_mode = Animation.LOOP_LINEAR
+			library.add_animation(clip, animation)
+		_model_libraries[model] = library
 	_animation.remove_animation_library("")
-	_animation.add_animation_library("", library)
-	for clip: StringName in [&"Idle", &"Stroll", &"Flee", &"Cower"]:
-		var animation: Animation = _animation.get_animation(clip).duplicate() as Animation
-		animation.loop_mode = Animation.LOOP_LINEAR
-		_animation.get_animation_library("").add_animation(clip, animation)
+	_animation.add_animation_library("", _model_libraries[model])
 	_drainable.drained.connect(_on_drained)
 	_drainable.collapsed.connect(_on_collapsed)
 	active = true
+	_simulation_delta = randf_range(0.0, DISTANT_INTERVAL)
+	_scream_cooldown = randf_range(1.0, 4.0)
+	route_direction = -1 if randf() < 0.5 else 1
 	_last_position = global_position
 	_enter(State.IDLE)
 
@@ -55,13 +80,10 @@ func stop() -> void:
 	active = false
 	plan_due = false
 	velocity = Vector3.ZERO
+	if is_instance_valid(scream_pool):
+		scream_pool.stop_speaker(self)
 	if _animation != null:
 		_animation.pause()
-
-func can_recycle() -> bool:
-	if not active or is_queued_for_deletion() or _drainable == null:
-		return false
-	return not _drainable.is_collapsed and _drainable.remaining_capacity >= _drainable.capacity
 
 func _enter(next: State) -> void:
 	state = next
@@ -71,7 +93,7 @@ func _enter(next: State) -> void:
 	plan_due = false
 	match state:
 		State.IDLE:
-			_clock = randf_range(3.0, 8.0)
+			_clock = randf_range(0.8, 2.2)
 			_animation.play(&"Idle", 0.15)
 		State.STROLL:
 			plan_due = true
@@ -79,6 +101,9 @@ func _enter(next: State) -> void:
 		State.STARTLED:
 			_clock = maxf(0.3, _animation.get_animation(&"Startle").length)
 			_animation.play(&"Startle", 0.1)
+			if _scream_cooldown <= 0.0 and is_instance_valid(scream_pool):
+				scream_pool.play_scream(self)
+				_scream_cooldown = 5.0
 		State.FLEE:
 			_clock = 0.0
 			_safe_time = 0.0
@@ -87,7 +112,7 @@ func _enter(next: State) -> void:
 
 func accept_path(path: PackedVector3Array) -> void:
 	plan_due = false
-	_clock = randf_range(1.2, 1.8)
+	_clock = randf_range(2.5, 4.5)
 	_path = path
 	_waypoint = 0
 	_stuck_time = 0.0
@@ -105,10 +130,18 @@ func _physics_process(delta: float) -> void:
 	if not bool(player.get("gameplay_enabled")):
 		velocity = Vector3.ZERO
 		return
-	_clock -= delta
-	var player_radius: float = _player_radius()
 	var distance: float = _flat_distance(global_position, player.global_position)
-	if state in [State.IDLE, State.STROLL] and distance < 13.0 + player_radius:
+	var distant: bool = distance > FULL_RATE_DISTANCE + _cached_player_radius
+	_simulation_delta += delta
+	if distant and _simulation_delta < DISTANT_INTERVAL:
+		return
+	delta = _simulation_delta
+	_simulation_delta = 0.0
+	_clock -= delta
+	_scream_cooldown = maxf(0.0, _scream_cooldown - delta)
+	var player_radius: float = _player_radius()
+	_cached_player_radius = player_radius
+	if state in [State.IDLE, State.STROLL] and distance < STARTLE_DISTANCE + player_radius:
 		_enter(State.STARTLED)
 	match state:
 		State.IDLE:
@@ -118,8 +151,8 @@ func _physics_process(delta: float) -> void:
 			if _clock <= 0.0:
 				_enter(State.FLEE)
 		State.FLEE:
-			_safe_time = _safe_time + delta if distance > 25.0 + player_radius else 0.0
-			if _safe_time >= 3.0:
+			_safe_time = _safe_time + delta if distance > SAFE_DISTANCE + player_radius else 0.0
+			if _safe_time >= 3.0 and _waypoint >= _path.size():
 				_enter(State.IDLE)
 			elif _clock <= 0.0 and (_waypoint >= _path.size() or _flat_distance(_path[-1], player.global_position) < distance + 3.0):
 				plan_due = true
@@ -139,14 +172,23 @@ func _physics_process(delta: float) -> void:
 	elif state == State.STROLL and not plan_due:
 		_enter(State.IDLE)
 	elif state == State.FLEE:
-		_animation.play(&"Cower", 0.15)
+		if _animation.current_animation != &"Cower":
+			_animation.play(&"Cower", 0.15)
 	_last_position = global_position
 	velocity.x = horizontal.x
 	velocity.z = horizontal.z
 	velocity.y = 0.0 if is_on_floor() else velocity.y + get_gravity().y * delta
-	move_and_slide()
+	if distant:
+		var motion: Vector3 = Vector3(horizontal.x * delta, -0.2, horizontal.z * delta)
+		var collision: KinematicCollision3D = move_and_collide(motion)
+		if collision != null:
+			move_and_collide(collision.get_remainder().slide(collision.get_normal()))
+		velocity.y = 0.0
+	else:
+		move_and_slide()
 	if not horizontal.is_zero_approx():
 		_visual.rotation.y = lerp_angle(_visual.rotation.y, atan2(-horizontal.x, -horizontal.z), minf(1.0, delta * 8.0))
+	_animation.advance(delta)
 
 func _on_drained(_amount: float) -> void:
 	_safe_time = 0.0
@@ -154,6 +196,9 @@ func _on_drained(_amount: float) -> void:
 		_enter(State.STARTLED)
 
 func _on_collapsed() -> void:
+	if not _kill_rewarded and is_instance_valid(_drainable.collector) and _drainable.collector.has_method(&"heal_immediately"):
+		_kill_rewarded = true
+		_drainable.collector.call(&"heal_immediately", 1.0)
 	stop()
 	collision_layer = 0
 	collision_mask = 0
