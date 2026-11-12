@@ -21,6 +21,9 @@ const PROBE_MARGIN: float = 0.1
 const STOP_MARGIN: float = 0.35
 const THREAT_RADIUS: float = 10.0
 const TURN_YIELD_DOT: float = 0.94
+const DISTANT_PROBE_INTERVAL: float = 0.1
+const NEAR_PROBE_MARGIN: float = 80.0
+const PROBE_DIRECTION_DOT: float = 0.98
 const CarAudioScript = preload("res://game/demo/city/car_audio.gd")
 
 enum Motion { PARKED, CRUISE, YIELD }
@@ -35,6 +38,11 @@ var _yield_delay: float = 0.3
 var _priority: int = 0
 var _query_body: Area3D
 var _probe_query: PhysicsRayQueryParameters3D
+var _cached_obstacle: Dictionary = {}
+var _probe_origin: Vector3
+var _probe_forward: Vector3 = Vector3.ZERO
+var _probe_left: float = 0.0
+var _probe_initialized: bool = false
 var _player: CharacterBody3D
 var _motion: Motion = Motion.PARKED
 var _car_audio: Node3D
@@ -71,6 +79,7 @@ func set_active(enabled: bool) -> void:
 	_motion = Motion.CRUISE if enabled else Motion.PARKED
 	if not enabled:
 		_car_speed = 0.0
+		_probe_initialized = false
 	set_physics_process(enabled)
 
 func _ready() -> void:
@@ -81,6 +90,7 @@ func _ready() -> void:
 		return
 	_priority = get_instance_id()
 	_yield_delay = 0.3 + float(_priority % 5) * 0.12
+	_probe_left = DISTANT_PROBE_INTERVAL * float(_priority % 97) / 97.0
 	_configure_body()
 	_car_audio = CarAudioScript.new()
 	_car_audio.name = "CarAudio"
@@ -202,7 +212,7 @@ func _advance_waypoint() -> void:
 
 func _desired_speed(delta: float, forward: Vector3) -> float:
 	_yield_left = maxf(0.0, _yield_left - delta)
-	var obstacle: Dictionary = _probe(forward)
+	var obstacle: Dictionary = _sensed_obstacle(delta, forward)
 	if not obstacle.is_empty():
 		_note_obstacle(obstacle)
 		if _is_player_threat(forward):
@@ -211,6 +221,8 @@ func _desired_speed(delta: float, forward: Vector3) -> float:
 			_car_audio.call(&"clear_obstruction", delta)
 		var hit_position: Vector3 = obstacle.get("position", global_position)
 		var clearance: float = maxf(0.0, (hit_position - global_position).dot(forward) - _footprint_extent(forward) - STOP_MARGIN)
+		var initial_clearance: float = (hit_position - _probe_origin).dot(forward) - _footprint_extent(forward) - STOP_MARGIN
+		clearance = minf(clearance, maxf(0.0, initial_clearance - global_position.distance_to(_probe_origin)))
 		var safe_speed: float = sqrt(2.0 * BRAKE * clearance)
 		_motion = Motion.YIELD if safe_speed < CRUISE_SPEED else Motion.CRUISE
 		return minf(CRUISE_SPEED, safe_speed)
@@ -240,6 +252,31 @@ func _is_player_threat(forward: Vector3) -> bool:
 	var offset: Vector3 = target - global_position
 	offset.y = 0.0
 	return offset.length() < THREAT_RADIUS + float(_player.call("get_combat_radius"))
+
+func _sensed_obstacle(delta: float, forward: Vector3) -> Dictionary:
+	_probe_left -= delta
+	var near_player: bool = _is_near_player()
+	if near_player or not _probe_initialized or _probe_left <= 0.0 or _probe_forward.dot(forward) < PROBE_DIRECTION_DOT:
+		_cached_obstacle = _probe(forward)
+		_probe_origin = global_position
+		_probe_forward = forward
+		if near_player or not _probe_initialized:
+			_probe_left = DISTANT_PROBE_INTERVAL * float(_priority % 97) / 97.0
+		else:
+			_probe_left = DISTANT_PROBE_INTERVAL
+		_probe_initialized = true
+	return _cached_obstacle
+
+func _is_near_player() -> bool:
+	if not is_instance_valid(_player) or not _player.has_method(&"get_combat_radius"):
+		return true
+	var drain_reach: Variant = _player.get(&"effective_drain_reach")
+	if drain_reach == null:
+		return true
+	var radius: float = maxf(float(_player.call(&"get_combat_radius")), float(drain_reach)) + NEAR_PROBE_MARGIN
+	var offset: Vector3 = _player.global_position - global_position
+	offset.y = 0.0
+	return offset.length_squared() <= radius * radius
 
 func _probe(forward: Vector3) -> Dictionary:
 	if _query_body == null:
@@ -279,7 +316,7 @@ func _footprint_extent(direction: Vector3) -> float:
 
 func _note_obstacle(hit: Dictionary) -> void:
 	var collider: Object = hit.get("collider")
-	if collider is Node and (collider as Node).has_meta(&"city_car"):
+	if is_instance_valid(collider) and collider is Node and (collider as Node).has_meta(&"city_car"):
 		var other: Node = (collider as Node).get_meta(&"city_car") as Node
 		if is_instance_valid(other) and other != self:
 			_yield_left = maxf(_yield_left, 0.35 if _priority < other.get_instance_id() else 0.85)

@@ -12,6 +12,7 @@ const CELL_SIZE: float = 2.0
 const CHUNK_CELLS: int = 4
 const ROW_SPACING: float = 0.36
 const REWARD_SECONDS: float = 1.0
+const VISUAL_UPDATE_INTERVAL: float = 0.1
 
 class WheatDrainable extends Drainable:
 	var drain_efficiency: float = 1.0
@@ -52,6 +53,8 @@ var _rng: RandomNumberGenerator = RandomNumberGenerator.new()
 var _stalk_mesh: ArrayMesh
 var _material: ShaderMaterial
 var _transfers: Array[ReserveTransfer] = []
+var _dirty_visuals: Dictionary[CropCell, float] = {}
+var _visual_elapsed: float = 0.0
 var _life_modifier: float = 1.0
 
 
@@ -65,6 +68,13 @@ func _ready() -> void:
 
 
 func _process(delta: float) -> void:
+	if not _dirty_visuals.is_empty():
+		_visual_elapsed += delta
+		if _visual_elapsed >= VISUAL_UPDATE_INTERVAL:
+			for cell: CropCell in _dirty_visuals:
+				_set_withering(cell, _dirty_visuals[cell])
+			_dirty_visuals.clear()
+			_visual_elapsed = 0.0
 	for index: int in range(_transfers.size() - 1, -1, -1):
 		var transfer: ReserveTransfer = _transfers[index]
 		if not is_instance_valid(transfer.recipient) or float(transfer.recipient.get(&"health")) <= 0.0:
@@ -80,7 +90,7 @@ func _process(delta: float) -> void:
 		_record_absorbed(amount)
 		if transfer.time_left <= 0.0:
 			_transfers.remove_at(index)
-	set_process(not _transfers.is_empty())
+	set_process(not _transfers.is_empty() or not _dirty_visuals.is_empty())
 
 
 func _build_field() -> void:
@@ -253,7 +263,9 @@ func _record_absorbed(amount: float) -> void:
 
 
 func _on_cell_drained(amount: float, cell: CropCell) -> void:
-	_set_withering(cell, 1.0 - cell.drainable.drain_fraction())
+	if not cell.harvested:
+		_dirty_visuals[cell] = 1.0 - cell.drainable.drain_fraction()
+		set_process(true)
 	_record_absorbed(amount)
 
 
@@ -261,6 +273,9 @@ func _on_cell_collapsed(cell: CropCell) -> void:
 	if cell.harvested:
 		return
 	cell.harvested = true
+	_dirty_visuals.erase(cell)
+	if _dirty_visuals.is_empty():
+		_visual_elapsed = 0.0
 	_set_withering(cell, 1.0)
 	cell.collision.set_deferred(&"disabled", true)
 	var reward: float = cell.drainable.take_collapse_life()

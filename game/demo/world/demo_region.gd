@@ -66,6 +66,7 @@ var _traffic_routes: Array[PackedVector3Array] = []
 var _tank_routes: Array[PackedVector3Array] = []
 var _city_parking: Array[Transform3D] = []
 var _opening_encounter: Node3D
+var _terrain_heights: PackedFloat64Array = PackedFloat64Array()
 
 func _ready() -> void:
 	_rng.seed = 30102026
@@ -74,6 +75,7 @@ func _ready() -> void:
 	_target_root = _container("Targets")
 	_spawn_root = _container("SpawnPoints")
 	_fields_root = _container("Fields")
+	_cache_terrain_heights()
 	_build_terrain()
 	_build_roads()
 	_build_city()
@@ -190,15 +192,33 @@ func _height_sample(x: float, z: float) -> float:
 	var margin: float = maxf(absf(x) - 245.0, maxf(z - 350.0, -800.0 - z))
 	return height + smoothstep(0.0, 65.0, margin) * (14.0 + 5.0 * sin(x * 0.031 + z * 0.019))
 
+func _cache_terrain_heights() -> void:
+	var columns: int = int(WORLD_BOUNDS.size.x / STEP) + 1
+	var rows: int = int(WORLD_BOUNDS.size.y / STEP) + 1
+	_terrain_heights.resize(columns * rows)
+	for row: int in rows:
+		for column: int in columns:
+			var x: float = WORLD_BOUNDS.position.x + column * STEP
+			var z: float = WORLD_BOUNDS.position.y + row * STEP
+			_terrain_heights[row * columns + column] = _height_sample(x, z)
+
+func _grid_height(x: float, z: float) -> float:
+	if _terrain_heights.is_empty() or x < WORLD_BOUNDS.position.x or x > WORLD_BOUNDS.end.x or z < WORLD_BOUNDS.position.y or z > WORLD_BOUNDS.end.y:
+		return _height_sample(x, z)
+	var columns: int = int(WORLD_BOUNDS.size.x / STEP) + 1
+	var column: int = int((x - WORLD_BOUNDS.position.x) / STEP)
+	var row: int = int((z - WORLD_BOUNDS.position.y) / STEP)
+	return _terrain_heights[row * columns + column]
+
 func ground_height(x: float, z: float) -> float:
 	var x0: float = floorf(x / STEP) * STEP
 	var z0: float = floorf(z / STEP) * STEP
 	var u: float = (x - x0) / STEP
 	var v: float = (z - z0) / STEP
-	var a: float = _height_sample(x0, z0)
-	var b: float = _height_sample(x0 + STEP, z0)
-	var c: float = _height_sample(x0, z0 + STEP)
-	var d: float = _height_sample(x0 + STEP, z0 + STEP)
+	var a: float = _grid_height(x0, z0)
+	var b: float = _grid_height(x0 + STEP, z0)
+	var c: float = _grid_height(x0, z0 + STEP)
+	var d: float = _grid_height(x0 + STEP, z0 + STEP)
 	if u + v <= 1.0:
 		return a + (b - a) * u + (c - a) * v
 	return d + (c - d) * (1.0 - u) + (b - d) * (1.0 - v)
@@ -222,10 +242,10 @@ func _build_terrain() -> void:
 	surface.begin(Mesh.PRIMITIVE_TRIANGLES)
 	for z: int in range(int(WORLD_BOUNDS.position.y), int(WORLD_BOUNDS.end.y), int(STEP)):
 		for x: int in range(int(WORLD_BOUNDS.position.x), int(WORLD_BOUNDS.end.x), int(STEP)):
-			var a: Vector3 = Vector3(x, _height_sample(x, z), z)
-			var b: Vector3 = Vector3(x + STEP, _height_sample(x + STEP, z), z)
-			var c: Vector3 = Vector3(x, _height_sample(x, z + STEP), z + STEP)
-			var d: Vector3 = Vector3(x + STEP, _height_sample(x + STEP, z + STEP), z + STEP)
+			var a: Vector3 = Vector3(x, _grid_height(x, z), z)
+			var b: Vector3 = Vector3(x + STEP, _grid_height(x + STEP, z), z)
+			var c: Vector3 = Vector3(x, _grid_height(x, z + STEP), z + STEP)
+			var d: Vector3 = Vector3(x + STEP, _grid_height(x + STEP, z + STEP), z + STEP)
 			for vertex: Vector3 in [a, b, c, b, d, c]:
 				surface.set_uv(Vector2(vertex.x, vertex.z) / 7.0)
 				surface.add_vertex(vertex)
