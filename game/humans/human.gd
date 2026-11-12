@@ -127,6 +127,13 @@ func receive_drain_burst(requested_amount: float, source_volume: float, collecto
 	if healing > 0.0 and collector.has_method(&"request_healing"):
 		collector.call(&"request_healing", healing)
 
+func receive_reflected_projectile(collector: Node3D) -> void:
+	if is_queued_for_deletion() or not is_inside_tree() or not is_instance_valid(drainable):
+		return
+	if drainable.is_queued_for_deletion() or drainable.is_collapsed:
+		return
+	drainable.force_collapse(collector)
+
 func _physics_process(delta: float) -> void:
 	if not _active or is_queued_for_deletion():
 		return
@@ -335,7 +342,7 @@ func _fire_bullet(direction: Vector3) -> void:
 	var origin: Vector3 = _visual.get_muzzle_position()
 	var bullet: Node3D = POLICE_BULLET.instantiate() as Node3D
 	get_parent().add_child(bullet)
-	bullet.configure(_balancer, origin, direction, damage)
+	bullet.configure(_balancer, origin, direction, damage, self)
 	_bullets = _bullets.filter(func(existing: Node3D) -> bool: return is_instance_valid(existing))
 	_bullets.append(bullet)
 	PoliceAudio.play_shot(get_parent(), origin)

@@ -1,6 +1,6 @@
 # Upgrade catalog
 
-The full upgrade catalog contains 21 upgrades: twelve implemented and nine planned. Names are display titles; effect descriptions use ordinary stat names.
+The full upgrade catalog contains 21 upgrades: fifteen implemented and six planned. Names are display titles; effect descriptions use ordinary stat names.
 
 ## Selection and stacking
 
@@ -19,9 +19,10 @@ The full upgrade catalog contains 21 upgrades: twelve implemented and nine plann
 - Expand a variant's effects array and add or edit `UpgradeStatEffect` resources. Select the stat (drain speed, drain radius, movement speed, phase cooldown, resistance, or phase distance) and enter its percentage.
 - For special shockwaves, edit `UpgradeVariant.shockwave` as a `ShockwaveEffect` alongside stat effects. Its settings are trigger (`PERIODIC` or `PHASE_COMPLETED`), presentation (`SHOCKWAVE` by default, `SOUL_BURST` for Outcry), `interval_seconds`, `delay_seconds`, `radius_multiplier`, `stun_seconds`, `topple_buildings`, `life_cost`, `cooldown_seconds`, `drain_seconds`, and `stacking_key`. The latter four configure consumed-life cost, successful-activation cooldown, drain-equivalent burst duration, and shared pulse stacking respectively. `delay_seconds` postpones the entire burst, including gameplay, visuals, and sound, in active gameplay time; it defaults to zero. Outcry leaves `stacking_key` empty and is not repeatable.
 - Enable the optional variant `phase_return` field for Phase time's return ability.
+- Set `projectile_reflection` for Uno's reflect chance percentage, `phase_through_objects` for Phasetastic's object traversal and safe landing, and `voidwalker_duration` for Voidwalker's automatic post-phase immunity seconds.
 - Positive percentages increase speed, radius, or distance; for phase cooldown and resistance they reduce cooldown or damage taken. For example, movement speed `15` means +15% (×1.15), movement speed `200` means +200% (×3), and phase cooldown `20` means a 20% reduction (×0.8). Movement acceleration follows movement speed.
 - Open `game/upgrades/upgrade_catalog.tres` to edit the definitions included in the offer pool and their rarity weights. Default Common/Uncommon/Epic/Legendary weights are `59/30/9/2`; weights are relative, not required to total 100.
-- Effect descriptions are generated from the variant's stat effects, shockwave configuration, and phase-return setting; do not author separate effect descriptions. Flavor text remains separately editable.
+- Effect descriptions are generated from the variant's stat effects, shockwave configuration, phase-return setting, and special variant settings; do not author separate effect descriptions. Flavor text remains separately editable.
 
 ## Overview
 
@@ -34,9 +35,9 @@ The full upgrade catalog contains 21 upgrades: twelve implemented and nine plann
 | Resistance | Implemented | C/U/E/L | Damage taken −10/15/25/40% |
 | Phar | Implemented | C/U/E/L | Phase distance +20/40/60/100% |
 | Gonzales | Implemented | L | Movement speed and acceleration ×3 |
-| Voidwalker | Planned | E | Hold Space after a phase to enter the void; immunity at a continuous consumed-life cost |
+| Voidwalker | Implemented | E | After each completed phase, 3 seconds of automatic damage immunity at no cost |
 | Phasefull | Implemented | E | Completed-phase shockwave freezes hostiles within current drain radius for 3 seconds; 10 consumed life, 30 active-play-second cooldown |
-| Phasetastic | Planned | E | Phase through objects |
+| Phasetastic | Implemented | E | Phase through objects and land at the nearest safe position |
 | Phase time | Implemented | E | One safe instant return to phase start during that phase's cooldown; preserves cooldown |
 | Phasplosion | Implemented | L | 0.5 seconds after phase completion, landing shockwave topples buildings within current drain radius and stuns hostiles for 3 seconds; gameplay, visuals, and sound delayed together |
 | Outcry | Implemented | E | Once per run; every 30 active play seconds, burst-drain hostiles within current drain radius for 8 seconds of normal drain |
@@ -47,7 +48,7 @@ The full upgrade catalog contains 21 upgrades: twelve implemented and nine plann
 | Pacifist | Planned | U | Ignore living creatures; drain speed ×2 |
 | The short king | Planned | E | Starting visible size retained; virtual growth with reduced growth-derived radius and speed bonuses |
 | Earthquake | Implemented | E | Topple buildings within current drain radius every 120 active gameplay seconds after pickup |
-| Uno | Planned | C/U/E/L | Reflect projectiles at 20/40/60/100% chance; reflection kills the shooter |
+| Uno | Implemented | E | Reflect projectiles at 50% chance; reflection kills the shooter |
 
 ## Implemented upgrades
 
@@ -141,21 +142,29 @@ The full upgrade catalog contains 21 upgrades: twelve implemented and nine plann
 - Each pulse snapshots the current drain radius and effective drain rate, applying an instant burst equal to 8 seconds of normal drain to hostiles within range, including tanks. Normal size eligibility, target drain efficiency, rewards, and healing apply.
 - **Presentation:** A unique ethereal soul burst escaping in all directions, accompanied by an ethereal scream/screech, distinct from other shockwaves' expanding-wave visuals and muffled bass explosion sound.
 
-## Planned upgrades
-
 ### Voidwalker
 
 *“Nothing will stop you, no matter what they try.”*
 
-- **Epic, once per run:** Hold Space after a phase to enter the void. While in the void, gain damage immunity and continuously lose consumed life.
-- **Unresolved:** Consumed-life loss rate and behavior at zero consumed life.
+- **Epic, once per run:** After each completed phase, gain 3 seconds of automatic damage immunity at no cost: no hold input, consumed-life drain, or extra cooldown. Cancelled phases do not grant it.
+- Another completed phase refreshes the duration to 3 seconds rather than stacking it. Phase cooldown continues concurrently, and normal draining and healing continue during the void. A Phase time return does not refresh it.
+- Pauses and upgrade choices freeze the active duration and retain its presentation. Death, retry, and rebirth clear it.
+- **Presentation:** The world darkens with thicker black ground fog plus depth fog that extends above the low fog layer, keeping the player and HUD readable at every growth size. All audio, including music, is low-passed. The effect restores the baseline environment, fog, and audio when it ends.
 
 ### Phasetastic
 
 *“Nothing can stand in your way.”*
 
-- **Epic, once per run:** Phase through objects.
-- **Unresolved:** Safe exit and blocked-landing behavior.
+- **Epic, once per run:** Phase travel ignores world geometry. Landing resolves backwards along the phase path to the nearest clear position; if none is clear, the Balancer returns to the phase start.
+- Normal collision and cooldown behavior resume when travel ends.
+
+### Uno
+
+*“The most powerful card.”*
+
+- **Epic, once per run:** Each incoming police bullet or tank shell has a fixed 50% chance to reflect back toward its shooter. A reflected projectile kills the shooter through the normal collapse and reward path.
+
+## Planned upgrades
 
 ### The Unforgiven
 
@@ -197,10 +206,3 @@ The full upgrade catalog contains 21 upgrades: twelve implemented and nine plann
 - **Epic, once per run:** Lock visible size to starting size. Virtual growth retains drain power and range progression, but growth-derived radius and speed bonuses are reduced by 80%.
 - This reduction applies to growth-derived bonuses, not necessarily to total radius or movement speed. Acceleration follows movement speed scaling.
 - **Unresolved:** Exact virtual-growth formula and how retained range progression combines with the reduced radius bonus.
-
-### Uno
-
-*“The most powerful card.”*
-
-- **C/U/E/L, repeatable:** 20/40/60/100% chance to reflect a projectile back at its shooter, killing the shooter.
-- **Unresolved:** Eligible projectile types and shooter handling.

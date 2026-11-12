@@ -102,6 +102,13 @@ func apply_stun(seconds: float) -> void:
 	_stun_left = maxf(_stun_left, seconds)
 	cancel_attack()
 
+func receive_reflected_projectile(collector: Node3D) -> void:
+	if _depleted or is_queued_for_deletion() or not is_inside_tree() or not is_instance_valid(drainable):
+		return
+	if drainable.is_queued_for_deletion() or drainable.is_collapsed:
+		return
+	drainable.force_collapse(collector)
+
 func receive_drain_burst(requested_amount: float, source_volume: float, collector: Node3D) -> void:
 	if not is_finite(requested_amount) or requested_amount <= 0.0 or not is_finite(source_volume) or source_volume <= 0.0:
 		return
@@ -420,7 +427,7 @@ func _resolve_attack() -> void:
 	_committed_direction = Vector3.ZERO
 	var shell: Node3D = SHELL.instantiate() as Node3D
 	get_parent().add_child(shell)
-	shell.configure(_player, origin, direction, damage, impact_radius, get_rid())
+	shell.configure(_player, origin, direction, damage, impact_radius, self)
 	_shells = _shells.filter(func(existing: Node3D) -> bool: return is_instance_valid(existing))
 	_shells.append(shell)
 	_fire_voice.global_position = origin

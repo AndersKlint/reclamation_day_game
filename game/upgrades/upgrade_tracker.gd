@@ -77,13 +77,44 @@ func select_offer(offer: UpgradeOffer) -> bool:
 	return true
 
 
-func _eligible_definitions() -> Array[UpgradeDefinition]:
-	var eligible: Array[UpgradeDefinition] = []
+func get_debug_offers() -> Array[UpgradeOffer]:
+	var offers: Array[UpgradeOffer] = []
+	for definition: UpgradeDefinition in _catalog_definitions():
+		for variant: UpgradeVariant in definition.variants:
+			offers.append(UpgradeOffer.new(definition, variant))
+	offers.sort_custom(_debug_offer_before)
+	return offers
+
+
+func get_owned_definitions() -> Array[StringName]:
+	var owned: Array[StringName] = []
+	for id: StringName in _ownership.keys():
+		owned.append(id)
+	return owned
+
+
+func grant_debug_offer(offer: UpgradeOffer) -> bool:
+	if offer == null:
+		return false
+	var definition: UpgradeDefinition = offer.definition
+	if not _catalog_definitions().has(definition):
+		return false
+	if not definition.variants.has(offer.variant):
+		return false
+	if not definition.repeatable and _ownership.has(definition.id):
+		return false
+	_ownership[definition.id] = _ownership.get(definition.id, 0) + 1
+	_offers.clear()
+	return true
+
+
+func _catalog_definitions() -> Array[UpgradeDefinition]:
+	var definitions: Array[UpgradeDefinition] = []
 	var seen: Dictionary[StringName, bool] = {}
 	var seen_titles: Dictionary[String, bool] = {}
 	if catalog == null:
 		push_warning("Upgrade catalog is missing.")
-		return eligible
+		return definitions
 	for definition: UpgradeDefinition in catalog.definitions:
 		if not _valid_definition(definition):
 			push_warning("Ignoring invalid upgrade definition in catalog.")
@@ -96,6 +127,19 @@ func _eligible_definitions() -> Array[UpgradeDefinition]:
 			continue
 		seen[definition.id] = true
 		seen_titles[definition.title] = true
+		definitions.append(definition)
+	return definitions
+
+
+func _debug_offer_before(a: UpgradeOffer, b: UpgradeOffer) -> bool:
+	if a.variant.rarity != b.variant.rarity:
+		return a.variant.rarity > b.variant.rarity
+	return a.definition.title.naturalnocasecmp_to(b.definition.title) < 0
+
+
+func _eligible_definitions() -> Array[UpgradeDefinition]:
+	var eligible: Array[UpgradeDefinition] = []
+	for definition: UpgradeDefinition in _catalog_definitions():
 		if definition.repeatable or not _ownership.has(definition.id):
 			eligible.append(definition)
 	return eligible

@@ -4,6 +4,7 @@ const UpgradeOffer = preload("res://game/upgrades/upgrade_offer.gd")
 const UpgradeVariant = preload("res://game/upgrades/upgrade_variant.gd")
 
 signal upgrade_selected(offer: UpgradeOffer)
+signal debug_upgrade_selected(offer: UpgradeOffer)
 signal pause_requested()
 signal resume_requested()
 signal retry_requested()
@@ -17,6 +18,7 @@ var _progress_bar: ProgressBar
 var _location_label: Label
 var _phase_label: Label
 var _phase_bar: ProgressBar
+var _void_label: Label
 var _endurance_label: Label
 var _endurance_bar: ProgressBar
 var _opening_status: Label
@@ -26,6 +28,7 @@ var _menu: VBoxContainer
 var _menu_panel: PanelContainer
 var _menu_scroll: ScrollContainer
 var _showing_upgrades: bool = false
+var _debug_upgrades: bool = false
 
 
 func _ready() -> void:
@@ -63,6 +66,8 @@ func _ready() -> void:
 	_phase_bar = _bar(stats)
 	_phase_label.hide()
 	_phase_bar.hide()
+	_void_label = _label(stats, "")
+	_void_label.hide()
 	_endurance_label = _label(stats, "")
 	_endurance_bar = _bar(stats)
 	hide_endurance()
@@ -136,7 +141,7 @@ func update_location(title: String, detail: String) -> void:
 	_location_label.show()
 
 
-func update_phase(ready: bool, remaining: float, duration: float, travelling: bool) -> void:
+func update_phase(ready: bool, remaining: float, duration: float, travelling: bool, void_remaining: float) -> void:
 	_controls_label.text = "Mouse · Orbit     WASD / arrows · Move     Space · Phase     Esc · Pause / cursor"
 	_phase_label.show()
 	_phase_bar.show()
@@ -149,6 +154,11 @@ func update_phase(ready: bool, remaining: float, duration: float, travelling: bo
 	else:
 		_phase_label.text = "PHASE  %.1fs" % maxf(remaining, 0.0)
 		_phase_bar.value = 1.0 - clampf(remaining / duration, 0.0, 1.0) if duration > 0.0 else 0.0
+	if void_remaining > 0.0:
+		_void_label.text = "VOID  IMMUNE · %.1fs" % void_remaining
+		_void_label.show()
+	else:
+		_void_label.hide()
 
 
 func update_endurance(fraction: float) -> void:
@@ -198,6 +208,33 @@ func show_upgrade_choices(offers: Array[UpgradeOffer], pending_count: int = 1) -
 		focus_target.grab_focus()
 
 
+func show_debug_upgrades(offers: Array[UpgradeOffer], owned: Array[StringName]) -> void:
+	_clear_menu()
+	_showing_upgrades = true
+	_debug_upgrades = true
+	_menu_scroll.vertical_scroll_mode = ScrollContainer.SCROLL_MODE_AUTO
+	_resize_upgrade_menu()
+	_centered_label(_menu, "Debug upgrades", 28)
+	_centered_label(_menu, "All catalog upgrades. Select one to apply and close.")
+	var grid := GridContainer.new()
+	grid.columns = 3
+	grid.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	grid.add_theme_constant_override("h_separation", 16)
+	grid.add_theme_constant_override("v_separation", 16)
+	_menu.add_child(grid)
+	var focus_target: Button = null
+	for offer: UpgradeOffer in offers:
+		var owned_unique: bool = not offer.definition.repeatable and owned.has(offer.definition.id)
+		var card: Button = _upgrade_card(grid, offer, owned_unique)
+		card.custom_minimum_size.y = 360.0
+		if not owned_unique and focus_target == null:
+			focus_target = card
+	_overlay.show()
+	if focus_target != null:
+		focus_target.grab_focus()
+	_menu_scroll.set_deferred(&"scroll_vertical", 0)
+
+
 func show_pause() -> void:
 	_clear_menu()
 	_label(_menu, "A moment of stillness", 28)
@@ -229,6 +266,7 @@ func hide_overlays() -> void:
 
 func _clear_menu() -> void:
 	_showing_upgrades = false
+	_debug_upgrades = false
 	_menu_panel.custom_minimum_size.x = 720.0
 	_menu_panel.custom_maximum_size.x = 820.0
 	_menu_scroll.vertical_scroll_mode = ScrollContainer.SCROLL_MODE_AUTO
@@ -247,7 +285,10 @@ func _resize_upgrade_menu() -> void:
 
 func _select_upgrade(offer: UpgradeOffer) -> void:
 	_disable_choice_buttons()
-	upgrade_selected.emit(offer)
+	if _debug_upgrades:
+		debug_upgrade_selected.emit(offer)
+	else:
+		upgrade_selected.emit(offer)
 
 
 func _disable_choice_buttons() -> void:
@@ -255,7 +296,7 @@ func _disable_choice_buttons() -> void:
 		(child as BaseButton).disabled = true
 
 
-func _upgrade_card(parent: HBoxContainer, offer: UpgradeOffer) -> Button:
+func _upgrade_card(parent: Container, offer: UpgradeOffer, owned: bool = false) -> Button:
 	var rarity_name: String
 	var rarity_color: Color
 	match offer.variant.rarity:
@@ -308,6 +349,11 @@ func _upgrade_card(parent: HBoxContainer, offer: UpgradeOffer) -> Button:
 	rarity_label.add_theme_color_override("font_color", rarity_color)
 	_centered_label(content, offer.definition.flavor_text, 16)
 	_centered_label(content, offer.variant.get_description())
+	if owned:
+		card.disabled = true
+		card.tooltip_text = "Already owned"
+		var owned_label: Label = _centered_label(content, "OWNED", 16)
+		owned_label.add_theme_color_override("font_color", rarity_color)
 	return card
 
 

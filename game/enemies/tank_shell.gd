@@ -6,8 +6,11 @@ const SPEED: float = 24.0
 const LIFETIME: float = 5.0
 const RADIUS: float = 0.25
 const OBSTACLE_MASK: int = 1 | 16
+const RETURN_HIT_DISTANCE: float = 1.5
+const RETURN_TARGET_HEIGHT: float = 1.8
 
 var _player: CharacterBody3D
+var _shooter: Node3D
 var _direction: Vector3
 var _damage: float
 var _blast_radius: float
@@ -15,13 +18,15 @@ var _age: float = 0.0
 var _excluded: Array[RID] = []
 var _shape: SphereShape3D = SphereShape3D.new()
 var _impacted: bool = false
+var _returning: bool = false
 
-func configure(player: CharacterBody3D, origin: Vector3, direction: Vector3, damage: float, blast_radius: float, shooter: RID) -> void:
+func configure(player: CharacterBody3D, origin: Vector3, direction: Vector3, damage: float, blast_radius: float, shooter: Node3D) -> void:
 	_player = player
+	_shooter = shooter
 	_direction = direction.normalized()
 	_damage = damage
 	_blast_radius = blast_radius
-	_excluded = [shooter]
+	_excluded = [shooter.get_rid()]
 	_shape.radius = RADIUS
 	global_position = origin
 	if not _direction.is_zero_approx():
@@ -29,11 +34,14 @@ func configure(player: CharacterBody3D, origin: Vector3, direction: Vector3, dam
 	reset_physics_interpolation()
 
 func _notification(what: int) -> void:
-	if what == NOTIFICATION_PAUSED:
+	if what == NOTIFICATION_PAUSED and not _returning:
 		queue_free()
 
 func _physics_process(delta: float) -> void:
 	if _impacted or is_queued_for_deletion():
+		return
+	if _returning:
+		_process_return(delta)
 		return
 	if not is_instance_valid(_player) or not _player.is_inside_tree():
 		queue_free()
@@ -66,6 +74,9 @@ func _physics_process(delta: float) -> void:
 	var player_fraction: float = _player_hit_fraction(start, end)
 	if player_fraction < 1.0:
 		global_position = start.lerp(end, player_fraction)
+		if _player.has_method(&"try_reflect_projectile") and bool(_player.call(&"try_reflect_projectile")):
+			_begin_reflection_return()
+			return
 		_explode()
 		return
 	global_position = end
@@ -92,6 +103,28 @@ func _player_hit_fraction(start: Vector3, end: Vector3) -> float:
 		else:
 			low = middle
 	return high
+
+func _begin_reflection_return() -> void:
+	_returning = true
+	if not _shooter_valid():
+		queue_free()
+
+func _shooter_valid() -> bool:
+	return is_instance_valid(_shooter) and _shooter.is_inside_tree() and not _shooter.is_queued_for_deletion()
+
+func _process_return(delta: float) -> void:
+	if not _shooter_valid():
+		queue_free()
+		return
+	var target: Vector3 = _shooter.global_position + Vector3.UP * RETURN_TARGET_HEIGHT
+	var offset: Vector3 = target - global_position
+	if offset.length() <= RETURN_HIT_DISTANCE:
+		_shooter.call(&"receive_reflected_projectile", _player)
+		queue_free()
+		return
+	_direction = offset.normalized()
+	global_position += _direction * minf(SPEED * delta, offset.length())
+	look_at(global_position + _direction, Vector3.FORWARD if absf(_direction.y) > 0.99 else Vector3.UP)
 
 func _explode() -> void:
 	if _impacted:

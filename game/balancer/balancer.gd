@@ -21,6 +21,12 @@ const MAX_BANK: float = 0.035
 const BANK_RESPONSE: float = 6.0
 const MAX_HEALING_PER_SECOND: float = 2.0
 const RETURN_CONTACT_TOLERANCE: float = 0.0001
+const PHASE_SOLID_LAYER: int = 1 << 5
+const PHASE_LANDING_STEP: float = 0.2
+const PHASE_LANDING_SAMPLES: int = 64
+const PHASE_LANDING_CONTACTS: int = 64
+const PHASE_LANDING_REFINEMENT_STEPS: int = 8
+const PHASE_LANDING_REFINEMENT_PASSES: int = 4
 
 @export var base_movement_speed: float = 6.0
 @export var acceleration: float = 24.0
@@ -55,6 +61,12 @@ var _bank: float = 0.0
 var _pending_healing: float = 0.0
 var _phase_origin: Vector3 = Vector3.ZERO
 var _phase_return_pending: bool = false
+var _phase_through_objects: bool = false
+var _phase_collision_active: bool = false
+var _normal_collision_layer: int = 0
+var _normal_collision_mask: int = 0
+var _phase_path: Array[Vector3] = []
+var projectile_reflection_chance: float = 0.0
 var effective_movement_speed: float:
 	get:
 		var raw: float = base_movement_speed * _movement_scale() * movement_multiplier
@@ -89,6 +101,8 @@ func _ready() -> void:
 	shockwave_controller.process_mode = Node.PROCESS_MODE_PAUSABLE
 	add_child(shockwave_controller)
 	body_shape.shape = body_shape.shape.duplicate()
+	_normal_collision_layer = collision_layer
+	_normal_collision_mask = collision_mask
 	add_to_group(&"player")
 	health = max_health
 	base_volume = Scaling.volume($Visuals/Reaper.model_dimensions * global_basis.get_scale().abs())
@@ -104,10 +118,12 @@ func _ready() -> void:
 	_refresh_growth()
 	if phase_controller != null:
 		phase_controller.bind(reaper, size)
+		phase_controller.set_landing_resolver(_resolve_phase_landing)
 	set_gameplay_enabled(false)
 
 func _physics_process(delta: float) -> void:
 	if not gameplay_enabled or Input.mouse_mode != Input.MOUSE_MODE_CAPTURED:
+		_exit_phase_collision()
 		_phase_return_pending = false
 		_pending_healing = 0.0
 		velocity = Vector3.ZERO
@@ -120,6 +136,7 @@ func _physics_process(delta: float) -> void:
 			_tick_phase(delta)
 			return
 	if phase_controller != null and phase_controller.is_travelling():
+		_enter_phase_collision()
 		var phase_step: float = clampf(phase_controller.get_travel_remaining() / maxf(delta, 0.0001), 0.0, 1.0)
 		var travel_velocity: Vector3 = phase_controller.get_travel_velocity() * phase_step
 		velocity.x = travel_velocity.x
@@ -127,8 +144,11 @@ func _physics_process(delta: float) -> void:
 		if not is_on_floor():
 			velocity += get_gravity() * delta
 		move_and_slide()
+		if _phase_through_objects:
+			_phase_path.append(global_position)
 		_tick_phase(delta)
 		if not phase_controller.is_travelling():
+			_exit_phase_collision()
 			velocity.x = 0.0
 			velocity.z = 0.0
 		return
@@ -162,8 +182,11 @@ func set_gameplay_enabled(enabled: bool) -> void:
 	_pending_healing = 0.0
 	visuals.rotation.z = 0.0
 	if not gameplay_enabled and phase_controller != null:
+		if health <= 0.0:
+			phase_controller.clear_void()
 		if health <= 0.0 or phase_controller.is_travelling():
 			phase_controller.cancel()
+		_exit_phase_collision()
 	camera_rig.set_gameplay_enabled(gameplay_enabled)
 	drain_area.enabled = gameplay_enabled
 	drain_vfx.set_enabled(gameplay_enabled)
@@ -172,6 +195,21 @@ func set_gameplay_enabled(enabled: bool) -> void:
 func enable_phase_return() -> void:
 	if phase_controller != null:
 		phase_controller.enable_phase_return()
+
+func enable_phase_through_objects() -> void:
+	_phase_through_objects = true
+
+func enable_voidwalker(duration: float) -> void:
+	if phase_controller != null:
+		phase_controller.enable_voidwalker(duration)
+
+func set_projectile_reflection_chance(chance: float) -> void:
+	projectile_reflection_chance = clampf(chance, 0.0, 1.0) if is_finite(chance) else 0.0
+
+func try_reflect_projectile() -> bool:
+	if not gameplay_enabled or health <= 0.0 or projectile_reflection_chance <= 0.0:
+		return false
+	return randf() < projectile_reflection_chance
 
 func activate_volume_drain() -> void:
 	if _volume_drain_active:
@@ -218,6 +256,10 @@ func _notification(what: int) -> void:
 	if what == NOTIFICATION_PAUSED:
 		_pending_healing = 0.0
 		_phase_return_pending = false
+		if _phase_collision_active:
+			if phase_controller != null and phase_controller.is_travelling():
+				phase_controller.cancel()
+			_exit_phase_collision()
 
 func _calculate_size() -> float:
 	var safe_life: float = life if is_finite(life) else 0.0
@@ -257,6 +299,9 @@ func _try_phase() -> void:
 	if not phase_controller.try_activate(direction):
 		return
 	_phase_origin = origin
+	_phase_path.clear()
+	if _phase_through_objects:
+		_phase_path.append(origin)
 	_bank = 0.0
 	visuals.rotation.z = 0.0
 	visuals.rotation.y = atan2(-direction.x, -direction.z)
@@ -282,6 +327,117 @@ func _try_phase_return() -> bool:
 	global_position = _phase_origin
 	velocity = Vector3.ZERO
 	reset_physics_interpolation()
+	return true
+
+func _enter_phase_collision() -> void:
+	if not _phase_through_objects or _phase_collision_active:
+		return
+	_phase_collision_active = true
+	collision_layer = 0
+	collision_mask = PHASE_SOLID_LAYER
+
+func _exit_phase_collision() -> void:
+	_phase_path.clear()
+	if not _phase_collision_active:
+		return
+	_phase_collision_active = false
+	collision_layer = _normal_collision_layer
+	collision_mask = _normal_collision_mask
+	if _geometry_update_pending:
+		_apply_growth_geometry.call_deferred()
+
+func _resolve_phase_landing() -> void:
+	if not _phase_through_objects:
+		return
+	if _phase_path.is_empty():
+		_phase_path.append(_phase_origin)
+	if _phase_path[_phase_path.size() - 1].distance_squared_to(global_position) > 0.000001:
+		_phase_path.append(global_position)
+	var landing: Vector3 = _find_phase_landing()
+	if not landing.is_finite():
+		landing = global_position
+	if landing.distance_squared_to(global_position) <= 0.000001:
+		return
+	global_position = landing
+	velocity = Vector3.ZERO
+	reset_physics_interpolation()
+
+func _find_phase_landing() -> Vector3:
+	var total: float = 0.0
+	for index: int in range(_phase_path.size() - 1):
+		total += _phase_path[index].distance_to(_phase_path[index + 1])
+	if total <= 0.000001:
+		return _safe_phase_origin()
+	var samples: int = clampi(ceili(total / PHASE_LANDING_STEP), 1, PHASE_LANDING_SAMPLES)
+	var step: float = total / samples
+	var clear_distance: float = -1.0
+	var blocked_distance: float = -1.0
+	# Occupancy is not monotonic along the path, so every sample must be considered backwards.
+	for index: int in range(samples, -1, -1):
+		var distance: float = index * step
+		if _phase_landing_is_clear(_phase_path_point(distance)):
+			clear_distance = distance
+			break
+		blocked_distance = distance
+	if clear_distance < 0.0:
+		return _safe_phase_origin()
+	if blocked_distance > clear_distance:
+		clear_distance = _refine_phase_landing(clear_distance, blocked_distance)
+	return _phase_path_point(clear_distance)
+
+func _refine_phase_landing(clear_distance: float, blocked_distance: float) -> float:
+	var low: float = clear_distance
+	var high: float = blocked_distance
+	for _pass: int in PHASE_LANDING_REFINEMENT_PASSES:
+		var found: float = -1.0
+		var next_blocked: float = high
+		for index: int in range(PHASE_LANDING_REFINEMENT_STEPS, 0, -1):
+			var fraction: float = float(index) / float(PHASE_LANDING_REFINEMENT_STEPS + 1)
+			var distance: float = lerpf(low, high, fraction)
+			if _phase_landing_is_clear(_phase_path_point(distance)):
+				found = distance
+				break
+			next_blocked = distance
+		if found < 0.0:
+			high = next_blocked
+			continue
+		low = found
+		high = next_blocked
+	return low
+
+func _safe_phase_origin() -> Vector3:
+	if _phase_landing_is_clear(_phase_path[0]):
+		return _phase_path[0]
+	# Physical growth is frozen during the phase, so a blocked origin means moving geometry; keep the resolved physics pose.
+	return global_position
+
+func _phase_path_point(distance: float) -> Vector3:
+	var remaining: float = distance
+	for index: int in range(_phase_path.size() - 1):
+		var segment: Vector3 = _phase_path[index + 1] - _phase_path[index]
+		var length: float = segment.length()
+		if length <= 0.000001:
+			continue
+		if remaining <= length:
+			return _phase_path[index] + segment * (remaining / length)
+		remaining -= length
+	return _phase_path[_phase_path.size() - 1]
+
+func _phase_landing_is_clear(candidate: Vector3) -> bool:
+	if body_shape.disabled or body_shape.shape == null or not candidate.is_finite():
+		return false
+	var query := PhysicsShapeQueryParameters3D.new()
+	query.shape = body_shape.shape
+	query.transform = body_shape.global_transform
+	query.transform.origin += candidate - global_position
+	query.collision_mask = 1
+	query.exclude = [get_rid()]
+	query.margin = 0.0
+	var contacts: PackedVector3Array = get_world_3d().direct_space_state.collide_shape(query, PHASE_LANDING_CONTACTS)
+	for index: int in range(0, contacts.size(), 2):
+		# Tangent floor contacts can produce sub-millimetre numerical penetration.
+		if contacts[index].distance_squared_to(contacts[index + 1]) > RETURN_CONTACT_TOLERANCE * RETURN_CONTACT_TOLERANCE:
+			return false
 	return true
 
 func adjust_life(amount: float) -> void:
@@ -344,12 +500,20 @@ func _refresh_growth() -> void:
 		_apply_growth_geometry.call_deferred()
 
 func _apply_growth_geometry() -> void:
+	# Landing safety relies on the pre-phase capsule, so growth waits until phase collision ends.
+	if _phase_collision_active:
+		return
 	_geometry_update_pending = false
-	var physical_size: float = clampf(size, minf(initial_size, PHYSICAL_SIZE_LIMIT), PHYSICAL_SIZE_LIMIT) if is_finite(size) else minf(initial_size, PHYSICAL_SIZE_LIMIT)
+	var physical_size: float = _physical_body_size()
 	var capsule: CapsuleShape3D = body_shape.shape as CapsuleShape3D
 	capsule.radius = COMBAT_RADIUS_PER_SIZE * physical_size
 	capsule.height = COMBAT_HEIGHT_PER_SIZE * physical_size
 	body_shape.position.y = capsule.height * 0.5
+
+func _physical_body_size() -> float:
+	if not is_finite(size):
+		return minf(initial_size, PHYSICAL_SIZE_LIMIT)
+	return clampf(size, minf(initial_size, PHYSICAL_SIZE_LIMIT), PHYSICAL_SIZE_LIMIT)
 
 func get_collection_position() -> Vector3:
 	return collection_point.global_position

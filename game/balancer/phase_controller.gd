@@ -5,6 +5,7 @@ signal phase_finished()
 signal phase_completed()
 signal state_changed(state: State)
 signal cooldown_changed(remaining: float, duration: float)
+signal void_changed(active: bool)
 
 enum State { READY, TRAVELLING, COOLDOWN }
 
@@ -32,6 +33,10 @@ var _vfx: PhaseVfx
 var _audio: PhaseAudio
 var _phase_return_enabled: bool = false
 var _return_available: bool = false
+var _landing_resolver: Callable
+var _void_enabled: bool = false
+var _void_duration: float = 0.0
+var _void_remaining: float = 0.0
 
 func _ready() -> void:
 	_vfx = PhaseVfx.new()
@@ -84,6 +89,10 @@ func try_activate(direction: Vector3) -> bool:
 func tick(delta: float) -> void:
 	if delta <= 0.0:
 		return
+	if _void_remaining > 0.0:
+		_void_remaining = maxf(0.0, _void_remaining - delta)
+		if _void_remaining <= 0.0:
+			void_changed.emit(false)
 	match _state:
 		State.TRAVELLING:
 			_travel_remaining -= delta
@@ -121,7 +130,25 @@ func is_travelling() -> bool:
 	return _state == State.TRAVELLING
 
 func is_invulnerable() -> bool:
-	return _state == State.TRAVELLING
+	return _state == State.TRAVELLING or _void_remaining > 0.0
+
+func enable_voidwalker(duration: float) -> void:
+	if not is_finite(duration) or duration <= 0.0:
+		return
+	_void_enabled = true
+	_void_duration = duration
+
+func get_void_remaining() -> float:
+	return _void_remaining
+
+func clear_void() -> void:
+	var was_active: bool = _void_remaining > 0.0
+	_void_remaining = 0.0
+	if was_active:
+		void_changed.emit(false)
+
+func set_landing_resolver(resolver: Callable) -> void:
+	_landing_resolver = resolver
 
 func is_phase_ready() -> bool:
 	return _state == State.READY
@@ -150,6 +177,9 @@ func get_cooldown_remaining_ratio() -> float:
 	return _cooldown_remaining / duration if duration > 0.0 else 0.0
 
 func _finish_travel(completed: bool) -> void:
+	# Landing must be resolved before completion observers sample the balancer position.
+	if _landing_resolver.is_valid():
+		_landing_resolver.call()
 	_end_presentation()
 	_cooldown_remaining = get_cooldown_duration()
 	_state = State.COOLDOWN
@@ -158,7 +188,14 @@ func _finish_travel(completed: bool) -> void:
 	cooldown_changed.emit(_cooldown_remaining, get_cooldown_duration())
 	phase_finished.emit()
 	if completed:
+		_refresh_void()
 		phase_completed.emit()
+
+func _refresh_void() -> void:
+	if not _void_enabled or _void_duration <= 0.0:
+		return
+	_void_remaining = _void_duration
+	void_changed.emit(true)
 
 func _begin_presentation() -> void:
 	if _presentation_active:

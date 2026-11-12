@@ -5,12 +5,15 @@ const Tracker = preload("res://game/upgrades/upgrade_tracker.gd")
 const GameplaySfx = preload("res://game/run/gameplay_sfx.gd")
 const HitFeedback = preload("res://game/ui/hit_feedback.gd")
 const PhaseController = preload("res://game/balancer/phase_controller.gd")
+const VoidwalkerPresentation = preload("res://game/balancer/voidwalker_presentation.gd")
 
-enum State { RUNNING, PAUSED, CHOOSING, FAILED, REBIRTH, FINISHED }
+enum State { RUNNING, PAUSED, DEBUG_UPGRADES, CHOOSING, FAILED, REBIRTH, FINISHED }
 
 @export_range(0.1, 1.0) var completion_ratio: float = 0.9
 @export_range(0.5, 10.0) var rebirth_duration: float = 4.0
 @export var region: Node3D
+@export var world_environment: WorldEnvironment
+@export var ground_fog: FogVolume
 @export var place_player_at_region_spawn: bool = false
 @export var regional_encounters: bool = false
 @export var demo_guidance: bool = false
@@ -26,6 +29,7 @@ var _opening_started: bool = false
 var _escalation_started: bool = false
 var _previous_health: float = 0.0
 var _hit_feedback: HitFeedback
+var _voidwalker_presentation: VoidwalkerPresentation
 
 @onready var balancer: CharacterBody3D = $Balancer
 @onready var human_director: Node3D = $HumanDirector
@@ -57,11 +61,13 @@ func _ready() -> void:
 		balancer.global_position = region.get_player_spawn()
 		balancer.reset_physics_interpolation()
 	balancer.shockwave_controller.configure(balancer, self, Callable(region, "ground_position"))
+	_configure_voidwalker_presentation()
 	balancer.health_changed.connect(_on_health_changed)
 	balancer.growth_changed.connect(_on_growth_changed)
 	balancer.died.connect(_queue_resolution)
 	region.progress_changed.connect(_on_progress_changed)
 	interface.upgrade_selected.connect(_on_upgrade_selected)
+	interface.debug_upgrade_selected.connect(_on_debug_upgrade_selected)
 	interface.pause_requested.connect(_on_pause_requested)
 	interface.resume_requested.connect(_on_resume_requested)
 	interface.retry_requested.connect(_on_retry_requested)
@@ -93,6 +99,14 @@ func _configure_city_managers() -> void:
 		city_traffic.call(&"configure", region, balancer)
 	if tank_director != null:
 		tank_director.call(&"configure", region, balancer)
+
+func _configure_voidwalker_presentation() -> void:
+	if world_environment == null or ground_fog == null or balancer.phase_controller == null:
+		return
+	_voidwalker_presentation = VoidwalkerPresentation.new()
+	_voidwalker_presentation.name = "VoidwalkerPresentation"
+	add_child(_voidwalker_presentation)
+	_voidwalker_presentation.configure(world_environment, ground_fog, balancer, balancer.camera, balancer.phase_controller)
 
 func _process(delta: float) -> void:
 	if state == State.RUNNING and not get_tree().paused:
@@ -153,11 +167,26 @@ func _start_escalation() -> void:
 func _refresh_phase() -> void:
 	var phase: PhaseController = balancer.phase_controller
 	if phase != null:
-		interface.update_phase(phase.is_phase_ready(), phase.get_cooldown_remaining(), phase.get_cooldown_duration(), phase.is_travelling())
+		interface.update_phase(phase.is_phase_ready(), phase.get_cooldown_remaining(), phase.get_cooldown_duration(), phase.is_travelling(), phase.get_void_remaining())
 
 func _notification(what: int) -> void:
 	if what == NOTIFICATION_APPLICATION_FOCUS_OUT and is_node_ready():
 		_on_pause_requested()
+
+# End is consumed by the focused ScrollContainer, so debug input runs before UI.
+func _input(event: InputEvent) -> void:
+	if event.is_action_pressed(&"debug_upgrades") and not event.is_echo():
+		if state == State.RUNNING:
+			_open_debug_upgrades()
+		elif state == State.DEBUG_UPGRADES:
+			_on_resume_requested()
+		else:
+			return
+		get_viewport().set_input_as_handled()
+	elif event.is_action_pressed(&"pause") and not event.is_echo() and state == State.DEBUG_UPGRADES:
+		_on_resume_requested()
+		get_viewport().set_input_as_handled()
+
 
 func _unhandled_input(event: InputEvent) -> void:
 	if event.is_action_pressed(&"pause") and not event.is_echo():
@@ -221,16 +250,42 @@ func _on_upgrade_selected(offer: UpgradeOffer) -> void:
 	if not upgrades.select_offer(offer):
 		return
 	state = State.RUNNING
+	_apply_upgrade(offer)
+	interface.hide_overlays()
+	_queue_resolution()
+
+func _on_debug_upgrade_selected(offer: UpgradeOffer) -> void:
+	if state != State.DEBUG_UPGRADES or offer == null:
+		return
+	if not upgrades.grant_debug_offer(offer):
+		return
+	_apply_upgrade(offer)
+	_on_resume_requested()
+
+func _apply_upgrade(offer: UpgradeOffer) -> void:
 	balancer.apply_upgrade(offer.variant.get_effects())
 	balancer.grant_shockwave(offer.variant.shockwave)
 	if offer.variant.phase_return:
 		balancer.enable_phase_return()
+	if offer.variant.projectile_reflection > 0.0:
+		balancer.set_projectile_reflection_chance(offer.variant.projectile_reflection / 100.0)
+	if offer.variant.phase_through_objects:
+		balancer.enable_phase_through_objects()
+	if offer.variant.voidwalker_duration > 0.0:
+		balancer.enable_voidwalker(offer.variant.voidwalker_duration)
 	_refresh_growth_display()
-	interface.hide_overlays()
-	_queue_resolution()
 
 func _refresh_growth_display() -> void:
 	interface.update_growth(balancer.life, balancer.size, upgrades.next_threshold, upgrades.earned_tiers, balancer.volume)
+
+func _open_debug_upgrades() -> void:
+	if state != State.RUNNING or _retry_pending or get_tree().paused:
+		return
+	state = State.DEBUG_UPGRADES
+	_hit_feedback.cancel()
+	balancer.set_gameplay_enabled(false)
+	get_tree().paused = true
+	interface.show_debug_upgrades(upgrades.get_debug_offers(), upgrades.get_owned_definitions())
 
 func _on_pause_requested() -> void:
 	if state != State.RUNNING:
@@ -242,7 +297,7 @@ func _on_pause_requested() -> void:
 	interface.show_pause()
 
 func _on_resume_requested() -> void:
-	if state != State.PAUSED:
+	if state not in [State.PAUSED, State.DEBUG_UPGRADES]:
 		return
 	state = State.RUNNING
 	interface.hide_overlays()
@@ -288,7 +343,14 @@ func _on_retry_requested() -> void:
 	_stop_managers()
 	_reload_run.call_deferred()
 
+func _clear_void() -> void:
+	if balancer.phase_controller != null:
+		balancer.phase_controller.clear_void()
+	if _voidwalker_presentation != null:
+		_voidwalker_presentation.set_active(false)
+
 func _stop_managers() -> void:
+	_clear_void()
 	_hit_feedback.cancel()
 	if _opening != null:
 		_opening.call(&"stop")

@@ -20,6 +20,7 @@ const COVER_FADE_SHADER: Shader = preload("res://game/demo/world/ground_cover_fa
 const GROUND = preload("res://available-assets/retro3d-assets/Buildings/Abandoned House/Textures/groundgrass.png")
 const GRASS = preload("res://available-assets/retro3d-assets/Nature/Materials/grass_bush_1.png")
 const STEP: float = 4.0
+const PHASE_SOLID_LAYER: int = 1 << 5
 const WORLD_BOUNDS: Rect2 = Rect2(Vector2(-280.0, -780.0), Vector2(560.0, 1160.0))
 const CITY_EDGE: float = -190.0
 const DOWNTOWN_EDGE: float = -460.0
@@ -237,7 +238,7 @@ func _build_terrain() -> void:
 	_landscape.add_child(terrain)
 	var body: StaticBody3D = StaticBody3D.new()
 	body.name = "TerrainCollision"
-	body.collision_layer = 1
+	body.collision_layer = 1 | PHASE_SOLID_LAYER
 	body.collision_mask = 6
 	var shape: CollisionShape3D = CollisionShape3D.new()
 	shape.shape = mesh.create_trimesh_shape()
@@ -672,7 +673,7 @@ func _add_spawn(p: Vector2) -> void:
 func _build_perimeter() -> void:
 	var body: StaticBody3D = StaticBody3D.new()
 	body.name = "WoodlandPerimeter"
-	body.collision_layer = 1
+	body.collision_layer = 1 | PHASE_SOLID_LAYER
 	body.collision_mask = 6
 	var center: Vector2 = WORLD_BOUNDS.get_center()
 	var half_x: float = WORLD_BOUNDS.size.x * 0.5 - 4.0

@@ -15,10 +15,12 @@
 [ext_resource type="Script" path="res://game/enemies/tank_director.gd" id="13_tank"]
 [ext_resource type="Script" path="res://game/balancer/phase_controller.gd" id="14_phase"]
 
-[node name="DemoRun" type="Node3D" node_paths=PackedStringArray("region", "civilian_population", "city_traffic", "tank_director")]
+[node name="DemoRun" type="Node3D" node_paths=PackedStringArray("region", "civilian_population", "city_traffic", "tank_director", "world_environment", "ground_fog")]
 process_mode = 3
 script = ExtResource("1")
 region = NodePath("DemoRegion")
+world_environment = NodePath("DuskAtmosphere/WorldEnvironment")
+ground_fog = NodePath("DuskAtmosphere/GroundFog")
 place_player_at_region_spawn = true
 regional_encounters = true
 demo_guidance = true
