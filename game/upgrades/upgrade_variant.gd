@@ -6,10 +6,11 @@ enum Rarity { COMMON, UNCOMMON, EPIC, LEGENDARY }
 @export var rarity: Rarity = Rarity.COMMON
 @export var effects: Array[UpgradeStatEffect] = []
 @export var shockwave: ShockwaveEffect
+@export var phase_return: bool = false
 
 
 func is_valid() -> bool:
-	if not Rarity.values().has(rarity) or (effects.is_empty() and shockwave == null):
+	if not Rarity.values().has(rarity) or (effects.is_empty() and shockwave == null and not phase_return):
 		return false
 	if shockwave != null and not shockwave.is_valid():
 		return false
@@ -29,6 +30,8 @@ func get_description() -> String:
 		descriptions.append(effect.get_description())
 	if shockwave != null:
 		descriptions.append(shockwave.get_description())
+	if phase_return:
+		descriptions.append("Press Space during phase cooldown to return once to the phase starting position.")
 	return "\n".join(descriptions)
 
 

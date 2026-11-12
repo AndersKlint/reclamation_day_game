@@ -15,7 +15,7 @@ const MAX_COOLDOWN: float = 1.0e100
 
 @export var travel_time: float = 0.18
 @export var travel_distance: float = 3.5
-@export var cooldown_seconds: float = 1.0
+@export var cooldown_seconds: float = 8.0
 
 var _state: State = State.READY
 var _travel_remaining: float = 0.0
@@ -30,6 +30,8 @@ var _reaper_visible: bool = true
 var _presentation_active: bool = false
 var _vfx: PhaseVfx
 var _audio: PhaseAudio
+var _phase_return_enabled: bool = false
+var _return_available: bool = false
 
 func _ready() -> void:
 	_vfx = PhaseVfx.new()
@@ -67,6 +69,7 @@ func try_activate(direction: Vector3) -> bool:
 	var flat: Vector3 = Vector3(direction.x, 0.0, direction.z)
 	if flat.is_zero_approx() or not flat.is_finite():
 		return false
+	_return_available = false
 	_direction = flat.normalized()
 	_travel_remaining = maxf(travel_time, 0.001)
 	_travel_velocity = _direction * (maxf(travel_distance, 0.0) * _distance_multiplier * _body_size / _travel_remaining)
@@ -89,11 +92,13 @@ func tick(delta: float) -> void:
 		State.COOLDOWN:
 			_cooldown_remaining = maxf(0.0, _cooldown_remaining - delta)
 			if _cooldown_remaining <= 0.0:
+				_return_available = false
 				_state = State.READY
 				state_changed.emit(_state)
 				cooldown_changed.emit(0.0, get_cooldown_duration())
 
 func cancel() -> void:
+	_return_available = false
 	if _audio != null:
 		_audio.cancel()
 	if _state == State.TRAVELLING:
@@ -102,6 +107,15 @@ func cancel() -> void:
 		_finish_travel(false)
 	if _vfx != null:
 		_vfx.clear()
+
+func enable_phase_return() -> void:
+	_phase_return_enabled = true
+
+func is_return_available() -> bool:
+	return _phase_return_enabled and _return_available and _state == State.COOLDOWN
+
+func consume_return() -> void:
+	_return_available = false
 
 func is_travelling() -> bool:
 	return _state == State.TRAVELLING
@@ -128,7 +142,7 @@ func get_cooldown_remaining() -> float:
 	return _cooldown_remaining
 
 func get_cooldown_duration() -> float:
-	var base_duration: float = cooldown_seconds if is_finite(cooldown_seconds) else 1.0
+	var base_duration: float = cooldown_seconds if is_finite(cooldown_seconds) else 8.0
 	return clampf(base_duration * _cooldown_multiplier, MIN_COOLDOWN, MAX_COOLDOWN)
 
 func get_cooldown_remaining_ratio() -> float:
@@ -139,6 +153,7 @@ func _finish_travel(completed: bool) -> void:
 	_end_presentation()
 	_cooldown_remaining = get_cooldown_duration()
 	_state = State.COOLDOWN
+	_return_available = completed
 	state_changed.emit(_state)
 	cooldown_changed.emit(_cooldown_remaining, get_cooldown_duration())
 	phase_finished.emit()

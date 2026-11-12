@@ -29,7 +29,7 @@ Wheat drains automatically. Break the farmer's endurance, then stay close until 
 - **Mouse:** orbit the third-person camera.
 - **WASD / arrows:** camera-relative movement; the Balancer turns toward movement. No jump or sprint.
 - **Esc:** pause/resume and release/recapture the cursor. Menus use the mouse or keyboard focus; retry is available from pause and result screens.
-- **Space:** phase a short distance in the movement direction (or facing direction while still), with brief invulnerability followed by a cooldown. Available throughout the main demo and in the farmer combat demo.
+- **Space:** phase a short distance in the movement direction (or facing direction while still), with brief invulnerability followed by an 8-second base cooldown (eight times the previous 1 second; Phaseless reduces it normally). Phasing is available throughout the main demo and in the farmer combat demo. After acquiring **Phase time**, press Space again during cooldown for one safe instant return to that phase's start; a blocked destination preserves the return charge, and returning does not reset the cooldown.
 - **Period / comma:** debug-add / remove 500 life.
 - **Page Up / Page Down:** debug-add / remove 50,000 life.
 

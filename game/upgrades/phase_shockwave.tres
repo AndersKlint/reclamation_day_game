@@ -7,6 +7,7 @@
 [sub_resource type="Resource" id="Shockwave"]
 script = ExtResource("3")
 trigger = 1
+delay_seconds = 0.5
 stun_seconds = 3.0
 
 [sub_resource type="Resource" id="Legendary"]

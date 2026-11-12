@@ -148,6 +148,31 @@ func apply_stun(seconds: float) -> void:
 	_visual.update_pose(0.0, 0.0, 0.0, 0.0)
 
 
+func receive_drain_burst(requested_amount: float, source_volume: float, collector: Node3D) -> void:
+	if not is_finite(requested_amount) or requested_amount <= 0.0 or not is_finite(source_volume) or source_volume <= 0.0:
+		return
+	if _defeated or is_queued_for_deletion() or not is_inside_tree() or not is_instance_valid(drainable):
+		return
+	if drainable.is_queued_for_deletion() or drainable.is_collapsed or not drainable.can_drain(source_volume):
+		return
+	if not is_instance_valid(collector) or collector.is_queued_for_deletion() or not collector.is_inside_tree():
+		return
+	if not collector.has_method(&"gain_life") or not bool(collector.get("gameplay_enabled")):
+		return
+	var health: Variant = collector.get("health")
+	if not (health is float or health is int):
+		return
+	if not is_finite(float(health)) or float(health) <= 0.0:
+		return
+	var actual: float = drainable.drain(requested_amount, source_volume, collector)
+	if not is_finite(actual) or actual <= 0.0:
+		return
+	collector.call(&"gain_life", actual)
+	var healing: float = drainable.healing_for(actual)
+	if healing > 0.0 and collector.has_method(&"request_healing"):
+		collector.call(&"request_healing", healing)
+
+
 func _physics_process(delta: float) -> void:
 	if _defeated or not _active or is_queued_for_deletion():
 		return

@@ -1,6 +1,6 @@
 # Upgrade catalog
 
-The full upgrade catalog contains 21 upgrades: nine implemented and twelve planned. Names are display titles; effect descriptions use ordinary stat names.
+The full upgrade catalog contains 21 upgrades: twelve implemented and nine planned. Names are display titles; effect descriptions use ordinary stat names.
 
 ## Selection and stacking
 
@@ -9,6 +9,7 @@ The full upgrade catalog contains 21 upgrades: nine implemented and twelve plann
 - Values listed as C/U/E or C/U/E/L correspond to those rarities in order. Three-value upgrades have no Legendary version.
 - Ordinary stat upgrades are repeatable and stack multiplicatively, including percentage reductions. Fixed-rarity special upgrades can be selected only once per run.
 - Upgraded stats retain their growth scaling. Movement speed and acceleration scale together. Phase distance changes do not change phase duration.
+- The base phase cooldown is 8 seconds, eight times the previous 1 second. Phaseless applies its normal multiplicative reductions to this base.
 - Increasing drain speed does not increase the total reward available from a finite target.
 - Planned effects below preserve design intent; unresolved parameters are not balance commitments.
 
@@ -16,10 +17,11 @@ The full upgrade catalog contains 21 upgrades: nine implemented and twelve plann
 
 - Open a per-upgrade `.tres` resource under `game/upgrades/` in the Godot Inspector to edit its title, flavor text, and rarity variants.
 - Expand a variant's effects array and add or edit `UpgradeStatEffect` resources. Select the stat (drain speed, drain radius, movement speed, phase cooldown, resistance, or phase distance) and enter its percentage.
-- For special shockwaves, edit `UpgradeVariant.shockwave` as a `ShockwaveEffect` alongside stat effects. Its settings are trigger (`PERIODIC` or `PHASE_COMPLETED`), `interval_seconds`, `radius_multiplier`, `stun_seconds`, and `topple_buildings`.
+- For special shockwaves, edit `UpgradeVariant.shockwave` as a `ShockwaveEffect` alongside stat effects. Its settings are trigger (`PERIODIC` or `PHASE_COMPLETED`), presentation (`SHOCKWAVE` by default, `SOUL_BURST` for Outcry), `interval_seconds`, `delay_seconds`, `radius_multiplier`, `stun_seconds`, `topple_buildings`, `life_cost`, `cooldown_seconds`, `drain_seconds`, and `stacking_key`. The latter four configure consumed-life cost, successful-activation cooldown, drain-equivalent burst duration, and shared pulse stacking respectively. `delay_seconds` postpones the entire burst, including gameplay, visuals, and sound, in active gameplay time; it defaults to zero. Outcry leaves `stacking_key` empty and is not repeatable.
+- Enable the optional variant `phase_return` field for Phase time's return ability.
 - Positive percentages increase speed, radius, or distance; for phase cooldown and resistance they reduce cooldown or damage taken. For example, movement speed `15` means +15% (×1.15), movement speed `200` means +200% (×3), and phase cooldown `20` means a 20% reduction (×0.8). Movement acceleration follows movement speed.
 - Open `game/upgrades/upgrade_catalog.tres` to edit the definitions included in the offer pool and their rarity weights. Default Common/Uncommon/Epic/Legendary weights are `59/30/9/2`; weights are relative, not required to total 100.
-- Effect descriptions are generated from the variant's stat effects and shockwave configuration; do not author separate effect descriptions. Flavor text remains separately editable.
+- Effect descriptions are generated from the variant's stat effects, shockwave configuration, and phase-return setting; do not author separate effect descriptions. Flavor text remains separately editable.
 
 ## Overview
 
@@ -33,11 +35,11 @@ The full upgrade catalog contains 21 upgrades: nine implemented and twelve plann
 | Phar | Implemented | C/U/E/L | Phase distance +20/40/60/100% |
 | Gonzales | Implemented | L | Movement speed and acceleration ×3 |
 | Voidwalker | Planned | E | Hold Space after a phase to enter the void; immunity at a continuous consumed-life cost |
-| Phasefull | Planned | E | After-phase fear shockwave; 10 consumed life, 30-second cooldown |
+| Phasefull | Implemented | E | Completed-phase shockwave freezes hostiles within current drain radius for 3 seconds; 10 consumed life, 30 active-play-second cooldown |
 | Phasetastic | Planned | E | Phase through objects |
-| Phase time | Planned | E | Press Space during phase cooldown to return to the position the phase started from |
-| Phasplosion | Implemented | L | Completed-phase landing shockwave topples buildings within current drain radius and stuns hostiles for 3 seconds |
-| Outcry | Planned | C/U/E/L | Nearby damage every 30 seconds, equal to 3/5/8/12 seconds of drain damage |
+| Phase time | Implemented | E | One safe instant return to phase start during that phase's cooldown; preserves cooldown |
+| Phasplosion | Implemented | L | 0.5 seconds after phase completion, landing shockwave topples buildings within current drain radius and stuns hostiles for 3 seconds; gameplay, visuals, and sound delayed together |
+| Outcry | Implemented | E | Once per run; every 30 active play seconds, burst-drain hostiles within current drain radius for 8 seconds of normal drain |
 | The Unforgiven | Planned | L | No healing; damage dealt ×5 |
 | Godzilla | Planned | L | Current size ×2 on acquisition, twice usual consumed-life size growth, movement speed halved |
 | The Ape King | Planned | L | Size +50%; consumed-life growth scales accordingly |
@@ -110,11 +112,34 @@ The full upgrade catalog contains 21 upgrades: nine implemented and twelve plann
 
 *“No one saw it coming.”*
 
-- **Legendary, once per run:** Release a shockwave at the landing position after each completed phase, never on cancellation. Each trigger snapshots the current drain radius.
+- **Legendary, once per run:** Release a shockwave 0.5 active gameplay seconds after each completed phase, never on cancellation. Gameplay effects, visuals, and sound all wait for this delay. Menus and disabled gameplay pause the delay; death or retry discards pending bursts.
+- The burst stays at the saved ground-projected landing position even if you move or use Phase time's return during the delay. Current drain radius and affected targets are sampled when the burst fires, before costs or rewards.
 - Within that radius, topple buildings regardless of size gating, rewarding their remaining life exactly once through the normal collapse path and animation, as with Earthquake.
 - Stun all hostile humans, farmers, and tanks within that radius for 3 seconds. Repeated stuns refresh the duration rather than stacking; already-fired projectiles remain.
 - Deals no direct damage and has no extra cost or cooldown.
 - **Presentation:** Shares Earthquake's expanding-wave visual effect and the same muffled, low-pass bass explosion sound.
+
+### Phasefull
+
+*“The souls. They are leaking...”*
+
+- **Epic, once per run:** After a completed phase only, release an omnidirectional soul shockwave within the current drain radius that freezes hostiles for 3 seconds. Buildings are unaffected.
+- Starts ready. A successful activation costs 10 consumed life and starts a 30-active-play-second cooldown; menus pause the timer. Cancelled phases do not activate it. If consumed life is below 10, skip the wave without paying or starting its cooldown.
+
+### Phase time
+
+*“If only I could turn it back.”*
+
+- **Epic, once per run:** During phase cooldown, press Space again for one instant return to that phase's start position. The destination must be safe; a blocked return keeps the charge for another attempt.
+- A successful return consumes the charge but preserves the existing phase cooldown. An unused charge expires when that cooldown ends. Returns do not trigger completed-phase shockwaves.
+
+### Outcry
+
+*“The souls become too much to bear, escaping your body in all directions.”*
+
+- **Epic, once per run:** The first pulse occurs 30 active play seconds after pickup, then every 30 active play seconds. Menus pause the timer; Outcry does not stack.
+- Each pulse snapshots the current drain radius and effective drain rate, applying an instant burst equal to 8 seconds of normal drain to hostiles within range, including tanks. Normal size eligibility, target drain efficiency, rewards, and healing apply.
+- **Presentation:** A unique ethereal soul burst escaping in all directions, accompanied by an ethereal scream/screech, distinct from other shockwaves' expanding-wave visuals and muffled bass explosion sound.
 
 ## Planned upgrades
 
@@ -125,33 +150,12 @@ The full upgrade catalog contains 21 upgrades: nine implemented and twelve plann
 - **Epic, once per run:** Hold Space after a phase to enter the void. While in the void, gain damage immunity and continuously lose consumed life.
 - **Unresolved:** Consumed-life loss rate and behavior at zero consumed life.
 
-### Phasefull
-
-*“The souls. They are leaking...”*
-
-- **Epic, once per run:** After a phase, release an omnidirectional soul shockwave that freezes enemies in fear. Costs 10 consumed life and has a 30-second cooldown.
-- **Unresolved:** Fear duration, shockwave range, and behavior when the cost is unaffordable.
-
 ### Phasetastic
 
 *“Nothing can stand in your way.”*
 
 - **Epic, once per run:** Phase through objects.
 - **Unresolved:** Safe exit and blocked-landing behavior.
-
-### Phase time
-
-*“If only I could turn it back.”*
-
-- **Epic, once per run:** During phase cooldown, press Space again to return to the position the phase started from.
-- **Unresolved:** Return safety, cooldown behavior after returning, and how many return uses are allowed per phase.
-
-### Outcry
-
-*“The souls become too much to bear, escaping your body in all directions.”*
-
-- **C/U/E/L, repeatable:** Deal damage nearby every 30 seconds, equal to 3/5/8/12 seconds of drain damage.
-- **Unresolved:** Damage radius and when drain damage is sampled.
 
 ### The Unforgiven
 

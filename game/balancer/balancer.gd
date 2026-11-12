@@ -20,6 +20,7 @@ const BANK_PER_TURN_RATE: float = 0.03
 const MAX_BANK: float = 0.035
 const BANK_RESPONSE: float = 6.0
 const MAX_HEALING_PER_SECOND: float = 2.0
+const RETURN_CONTACT_TOLERANCE: float = 0.0001
 
 @export var base_movement_speed: float = 6.0
 @export var acceleration: float = 24.0
@@ -52,6 +53,8 @@ var _absorption_bounds: AABB
 var _absorption_bounds_ready: bool = false
 var _bank: float = 0.0
 var _pending_healing: float = 0.0
+var _phase_origin: Vector3 = Vector3.ZERO
+var _phase_return_pending: bool = false
 var effective_movement_speed: float:
 	get:
 		var raw: float = base_movement_speed * _movement_scale() * movement_multiplier
@@ -105,11 +108,17 @@ func _ready() -> void:
 
 func _physics_process(delta: float) -> void:
 	if not gameplay_enabled or Input.mouse_mode != Input.MOUSE_MODE_CAPTURED:
+		_phase_return_pending = false
 		_pending_healing = 0.0
 		velocity = Vector3.ZERO
 		_tick_phase(delta)
 		return
 	_consume_pending_healing(delta)
+	if _phase_return_pending:
+		_phase_return_pending = false
+		if _try_phase_return():
+			_tick_phase(delta)
+			return
 	if phase_controller != null and phase_controller.is_travelling():
 		var phase_step: float = clampf(phase_controller.get_travel_remaining() / maxf(delta, 0.0001), 0.0, 1.0)
 		var travel_velocity: Vector3 = phase_controller.get_travel_velocity() * phase_step
@@ -147,16 +156,22 @@ func _tick_phase(delta: float) -> void:
 
 func set_gameplay_enabled(enabled: bool) -> void:
 	gameplay_enabled = enabled and health > 0.0
+	_phase_return_pending = false
 	velocity = Vector3.ZERO
 	_bank = 0.0
 	_pending_healing = 0.0
 	visuals.rotation.z = 0.0
 	if not gameplay_enabled and phase_controller != null:
-		phase_controller.cancel()
+		if health <= 0.0 or phase_controller.is_travelling():
+			phase_controller.cancel()
 	camera_rig.set_gameplay_enabled(gameplay_enabled)
 	drain_area.enabled = gameplay_enabled
 	drain_vfx.set_enabled(gameplay_enabled)
 	drain_audio.set_enabled(gameplay_enabled)
+
+func enable_phase_return() -> void:
+	if phase_controller != null:
+		phase_controller.enable_phase_return()
 
 func activate_volume_drain() -> void:
 	if _volume_drain_active:
@@ -202,6 +217,7 @@ func _consume_pending_healing(delta: float) -> void:
 func _notification(what: int) -> void:
 	if what == NOTIFICATION_PAUSED:
 		_pending_healing = 0.0
+		_phase_return_pending = false
 
 func _calculate_size() -> float:
 	var safe_life: float = life if is_finite(life) else 0.0
@@ -225,7 +241,10 @@ func _unhandled_input(event: InputEvent) -> void:
 		adjust_life(-500.0)
 
 func _try_phase() -> void:
-	if phase_controller == null or not gameplay_enabled:
+	if phase_controller == null or not gameplay_enabled or health <= 0.0:
+		return
+	if phase_controller.get_state() == PhaseController.State.COOLDOWN:
+		_phase_return_pending = phase_controller.is_return_available()
 		return
 	var input: Vector2 = Input.get_vector(&"move_left", &"move_right", &"move_forward", &"move_backward")
 	var direction: Vector3 = camera_rig.global_basis * Vector3(input.x, 0.0, input.y)
@@ -234,11 +253,36 @@ func _try_phase() -> void:
 	direction.y = 0.0
 	if direction.is_zero_approx():
 		return
+	var origin: Vector3 = global_position
 	if not phase_controller.try_activate(direction):
 		return
+	_phase_origin = origin
 	_bank = 0.0
 	visuals.rotation.z = 0.0
 	visuals.rotation.y = atan2(-direction.x, -direction.z)
+
+func _try_phase_return() -> bool:
+	if not gameplay_enabled or health <= 0.0 or phase_controller == null or not phase_controller.is_return_available():
+		return false
+	if body_shape.disabled or body_shape.shape == null or not _phase_origin.is_finite():
+		return false
+	var query := PhysicsShapeQueryParameters3D.new()
+	query.shape = body_shape.shape
+	query.transform = body_shape.global_transform
+	query.transform.origin += _phase_origin - global_position
+	query.collision_mask = collision_mask
+	query.exclude = [get_rid()]
+	query.margin = 0.0
+	var contacts: PackedVector3Array = get_world_3d().direct_space_state.collide_shape(query)
+	for index: int in range(0, contacts.size(), 2):
+		# Tangent floor contacts can produce sub-millimetre numerical penetration.
+		if contacts[index].distance_squared_to(contacts[index + 1]) > RETURN_CONTACT_TOLERANCE * RETURN_CONTACT_TOLERANCE:
+			return false
+	phase_controller.consume_return()
+	global_position = _phase_origin
+	velocity = Vector3.ZERO
+	reset_physics_interpolation()
+	return true
 
 func adjust_life(amount: float) -> void:
 	if not is_finite(amount) or health <= 0.0:

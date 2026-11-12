@@ -1,4 +1,4 @@
-[gd_resource type="Resource" script_class="UpgradeCatalog" load_steps=12 format=3]
+[gd_resource type="Resource" script_class="UpgradeCatalog" load_steps=15 format=3]
 
 [ext_resource type="Script" path="res://game/upgrades/upgrade_catalog.gd" id="1"]
 [ext_resource type="Script" path="res://game/upgrades/upgrade_definition.gd" id="2"]
@@ -11,10 +11,13 @@
 [ext_resource type="Resource" path="res://game/upgrades/movement_speed_triple.tres" id="9"]
 [ext_resource type="Resource" path="res://game/upgrades/periodic_shockwave.tres" id="10"]
 [ext_resource type="Resource" path="res://game/upgrades/phase_shockwave.tres" id="11"]
+[ext_resource type="Resource" path="res://game/upgrades/phase_stun.tres" id="12"]
+[ext_resource type="Resource" path="res://game/upgrades/drain_pulse.tres" id="13"]
+[ext_resource type="Resource" path="res://game/upgrades/phase_return.tres" id="14"]
 
 [resource]
 script = ExtResource("1")
-definitions = Array[ExtResource("2")]([ExtResource("3"), ExtResource("4"), ExtResource("5"), ExtResource("6"), ExtResource("7"), ExtResource("8"), ExtResource("9"), ExtResource("10"), ExtResource("11")])
+definitions = Array[ExtResource("2")]([ExtResource("3"), ExtResource("4"), ExtResource("5"), ExtResource("6"), ExtResource("7"), ExtResource("8"), ExtResource("9"), ExtResource("10"), ExtResource("11"), ExtResource("12"), ExtResource("13"), ExtResource("14")])
 common_weight = 59.0
 uncommon_weight = 30.0
 epic_weight = 9.0

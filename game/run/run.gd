@@ -223,6 +223,8 @@ func _on_upgrade_selected(offer: UpgradeOffer) -> void:
 	state = State.RUNNING
 	balancer.apply_upgrade(offer.variant.get_effects())
 	balancer.grant_shockwave(offer.variant.shockwave)
+	if offer.variant.phase_return:
+		balancer.enable_phase_return()
 	_refresh_growth_display()
 	interface.hide_overlays()
 	_queue_resolution()

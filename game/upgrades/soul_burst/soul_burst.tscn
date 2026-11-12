@@ -1,0 +1,13 @@
+[gd_scene load_steps=3 format=3]
+
+[ext_resource type="Script" path="res://game/upgrades/soul_burst/soul_burst.gd" id="1_script"]
+[ext_resource type="AudioStream" path="res://game/upgrades/soul_burst/audio/soul_screech.wav" id="2_screech"]
+
+[node name="SoulBurst" type="Node3D"]
+process_mode = 1
+script = ExtResource("1_script")
+
+[node name="Screech" type="AudioStreamPlayer" parent="."]
+stream = ExtResource("2_screech")
+volume_db = -10.0
+max_polyphony = 1
