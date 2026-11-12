@@ -23,7 +23,6 @@ world_environment = NodePath("DuskAtmosphere/WorldEnvironment")
 ground_fog = NodePath("DuskAtmosphere/GroundFog")
 place_player_at_region_spawn = true
 regional_encounters = true
-demo_guidance = true
 civilian_population = NodePath("CivilianPopulation")
 city_traffic = NodePath("CityTraffic")
 tank_director = NodePath("TankDirector")

@@ -67,6 +67,9 @@ func _ready() -> void:
 	drainable.emission_offset = Vector3(0.0, 1.0, 0.0)
 	drainable.emission_radius = 0.4
 	drainable.collapsed.connect(_on_collapsed)
+	var health_bar := preload("res://game/ui/enemy_health_bar.gd").new()
+	add_child(health_bar)
+	health_bar.configure(drainable, _model_dimensions.y + 0.35)
 	_warning_material = StandardMaterial3D.new()
 	_warning_material.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
 	_warning_material.albedo_color = Color("ffc24b")

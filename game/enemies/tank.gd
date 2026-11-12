@@ -177,6 +177,9 @@ func _ready() -> void:
 	TankAssets.build(_visual, _heavy)
 	drainable.drain_speed_multiplier /= 20.0
 	drainable.configure_volume(WorldModel.bounds(_visual).size * global_basis.get_scale().abs())
+	var health_bar := preload("res://game/ui/enemy_health_bar.gd").new()
+	add_child(health_bar)
+	health_bar.configure(drainable, WorldModel.bounds(_visual).end.y + 0.5)
 
 func _notification(what: int) -> void:
 	if what == NOTIFICATION_PAUSED:

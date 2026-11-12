@@ -13,27 +13,40 @@ var _root: Control
 var _health_label: Label
 var _health_bar: ProgressBar
 var _growth_label: Label
-var _progress_label: Label
-var _progress_bar: ProgressBar
-var _location_label: Label
+var _growth_debug: Label
 var _phase_label: Label
 var _phase_bar: ProgressBar
-var _void_label: Label
-var _endurance_label: Label
-var _endurance_bar: ProgressBar
-var _opening_status: Label
-var _controls_label: Label
 var _overlay: ColorRect
 var _menu: VBoxContainer
 var _menu_panel: PanelContainer
 var _menu_scroll: ScrollContainer
 var _showing_upgrades: bool = false
 var _debug_upgrades: bool = false
-var _upgrade_timers: Label
+var _upgrade_timers: HBoxContainer
 
 
 func update_upgrade_timers(lines: PackedStringArray) -> void:
-	_upgrade_timers.text = "\n".join(lines)
+	while _upgrade_timers.get_child_count() > lines.size():
+		var extra: Node = _upgrade_timers.get_child(-1)
+		_upgrade_timers.remove_child(extra)
+		extra.queue_free()
+	for index: int in lines.size():
+		if index >= _upgrade_timers.get_child_count():
+			var tile := Label.new()
+			tile.mouse_filter = Control.MOUSE_FILTER_IGNORE
+			tile.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+			tile.add_theme_font_size_override("font_size", 14)
+			_upgrade_timers.add_child(tile)
+		var label := _upgrade_timers.get_child(index) as Label
+		var parts: PackedStringArray = lines[index].split(" · ", true, 1)
+		var symbol: String = "✦"
+		if parts[0].contains("Phase"):
+			symbol = "➜"
+		elif parts[0].contains("Void") or parts[0].contains("Stand"):
+			symbol = "◆"
+		elif parts[0].contains("Shock"):
+			symbol = "◎"
+		label.text = "%s %s\n%s" % [symbol, parts[0], parts[1] if parts.size() > 1 else ""]
 
 func _ready() -> void:
 	_root = Control.new()
@@ -42,14 +55,16 @@ func _ready() -> void:
 	add_child(_root)
 	_root.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	_root.theme = _make_theme()
-	_upgrade_timers = Label.new()
+	_upgrade_timers = HBoxContainer.new()
 	_upgrade_timers.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_root.add_child(_upgrade_timers)
 	_upgrade_timers.set_anchors_and_offsets_preset(Control.PRESET_TOP_RIGHT)
 	_upgrade_timers.grow_horizontal = Control.GROW_DIRECTION_BEGIN
-	_upgrade_timers.position = Vector2(-340.0, 20.0)
-	_upgrade_timers.size.x = 320.0
-	_upgrade_timers.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
+	_upgrade_timers.offset_left = -340.0
+	_upgrade_timers.offset_right = -20.0
+	_upgrade_timers.offset_top = 20.0
+	_upgrade_timers.alignment = BoxContainer.ALIGNMENT_END
+	_upgrade_timers.add_theme_constant_override("separation", 16)
 	var margins := MarginContainer.new()
 	_root.add_child(margins)
 	margins.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
@@ -61,7 +76,7 @@ func _ready() -> void:
 	margins.add_child(column)
 	var panel := PanelContainer.new()
 	panel.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	panel.custom_maximum_size.x = 420.0
+	panel.custom_maximum_size.x = 310.0
 	panel.propagate_maximum_size = true
 	column.add_child(panel)
 	var stats := VBoxContainer.new()
@@ -69,33 +84,17 @@ func _ready() -> void:
 	panel.add_child(stats)
 	_health_label = _label(stats, "")
 	_health_bar = _bar(stats)
-	_growth_label = _label(stats, "")
-	_progress_label = _label(stats, "")
-	_progress_bar = _bar(stats)
-	_location_label = _label(stats, "")
-	_location_label.hide()
 	_phase_label = _label(stats, "")
 	_phase_bar = _bar(stats)
 	_phase_label.hide()
 	_phase_bar.hide()
-	_void_label = _label(stats, "")
-	_void_label.hide()
-	_endurance_label = _label(stats, "")
-	_endurance_bar = _bar(stats)
-	hide_endurance()
-	_opening_status = _label(stats, "")
-	_opening_status.hide()
+	_growth_label = _label(stats, "")
+	_growth_debug = _label(stats, "", 13)
+	_growth_debug.add_theme_color_override("font_color", Color("8f9c95"))
 	var spacer := Control.new()
 	spacer.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	spacer.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	column.add_child(spacer)
-	_label(column, "Nearby life drains automatically. Grow to consume larger targets.")
-	var footer := HBoxContainer.new()
-	footer.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	column.add_child(footer)
-	_controls_label = _label(footer, "Mouse · Orbit     WASD / arrows · Move     Esc · Pause / cursor")
-	_controls_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	_button(footer, "Pause", func() -> void: pause_requested.emit())
 	_overlay = ColorRect.new()
 	_overlay.name = "Overlay"
 	_overlay.color = Color(0.025, 0.035, 0.035, 0.94)
@@ -127,72 +126,31 @@ func _ready() -> void:
 	_root.resized.connect(_resize_upgrade_menu)
 	update_health(100.0, 100.0)
 	update_growth(0.0, 1.0, 40.0)
-	update_progress(0.0, 0.0)
 	hide_overlays()
 
 
 func update_health(current: float, maximum: float) -> void:
-	_health_label.text = "VITALITY  %.0f / %.0f" % [current, maximum]
+	_health_label.text = "Health  %.0f / %.0f" % [current, maximum]
 	_health_bar.value = clampf(current / maximum, 0.0, 1.0) if maximum > 0.0 else 0.0
 
 
-func update_growth(life: float, size: float, next_threshold: float, earned_tiers: int = 0, volume: float = 0.0, visible_locked: bool = false, visible_size: float = 1.0) -> void:
-	var next_text: String = "NEXT CHOICE AT —" if is_inf(next_threshold) else "NEXT CHOICE AT %s" % _format_amount(next_threshold)
-	if visible_locked:
-		_growth_label.text = "LIFE  %s     VIRTUAL SIZE  %.2f×\nVIRTUAL VOLUME  %s m³     VISIBLE SIZE  %.2f×\nTIER  %d     %s" % [
-			_format_amount(life), size, _format_amount(volume), visible_size, earned_tiers, next_text]
-		return
-	_growth_label.text = "LIFE  %s     SIZE  %.2f×     VOLUME  %s m³\nTIER  %d     %s" % [
-		_format_amount(life), size, _format_amount(volume), earned_tiers, next_text]
+func update_growth(life: float, size: float, next_threshold: float) -> void:
+	_growth_label.text = "Life drained: %s" % _format_amount(life)
+	_growth_debug.text = "(next upgrade at: %s · size: %.2f×)" % ["—" if is_inf(next_threshold) else _format_amount(next_threshold), size]
 
 
-func update_progress(drained: float, initial: float) -> void:
-	var fraction: float = clampf(drained / initial, 0.0, 1.0) if initial > 0.0 else 0.0
-	_progress_bar.value = fraction
-	_progress_label.text = "REGION RECLAIMED  %.1f%%" % (fraction * 100.0)
-
-
-func update_location(title: String, detail: String) -> void:
-	_location_label.text = title.to_upper() + "\n" + detail
-	_location_label.show()
-
-
-func update_phase(ready: bool, remaining: float, duration: float, travelling: bool, void_remaining: float) -> void:
-	_controls_label.text = "Mouse · Orbit     WASD / arrows · Move     Space · Phase     Esc · Pause / cursor"
+func update_phase(ready: bool, remaining: float, duration: float, travelling: bool) -> void:
 	_phase_label.show()
 	_phase_bar.show()
 	if ready:
-		_phase_label.text = "PHASE  READY · Space"
+		_phase_label.text = "Phase  Ready"
 		_phase_bar.value = 1.0
 	elif travelling:
-		_phase_label.text = "PHASE  TRAVELLING"
+		_phase_label.text = "Phase"
 		_phase_bar.value = 0.0
 	else:
-		_phase_label.text = "PHASE  %.1fs" % maxf(remaining, 0.0)
+		_phase_label.text = "Phase  %.1fs" % maxf(remaining, 0.0)
 		_phase_bar.value = 1.0 - clampf(remaining / duration, 0.0, 1.0) if duration > 0.0 else 0.0
-	if void_remaining > 0.0:
-		_void_label.text = "VOID  IMMUNE · %.1fs" % void_remaining
-		_void_label.show()
-	else:
-		_void_label.hide()
-
-
-func update_endurance(fraction: float) -> void:
-	var value: float = clampf(fraction, 0.0, 1.0)
-	_endurance_label.text = "FARMER ENDURANCE  %d%%" % roundi(value * 100.0)
-	_endurance_bar.value = value
-	_endurance_label.show()
-	_endurance_bar.show()
-
-
-func hide_endurance() -> void:
-	_endurance_label.hide()
-	_endurance_bar.hide()
-
-
-func set_opening_status(text: String) -> void:
-	_opening_status.text = text
-	_opening_status.visible = not text.is_empty()
 
 
 func show_upgrade_choices(offers: Array[UpgradeOffer], pending_count: int = 1) -> void:

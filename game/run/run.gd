@@ -17,12 +17,10 @@ enum State { RUNNING, PAUSED, DEBUG_UPGRADES, CHOOSING, FAILED, REBIRTH, FINISHE
 @export var ground_fog: FogVolume
 @export var place_player_at_region_spawn: bool = false
 @export var regional_encounters: bool = false
-@export var demo_guidance: bool = false
 @export var civilian_population: Node3D
 @export var city_traffic: Node3D
 @export var tank_director: Node3D
 var state: State = State.RUNNING
-var _guidance_elapsed: float = 0.0
 var _resolution_pending: bool = false
 var _retry_pending: bool = false
 var _opening: Node3D
@@ -57,8 +55,6 @@ func _ready() -> void:
 		_opening = region.call(&"get_opening_encounter") as Node3D
 	if _opening != null:
 		_opening.completed.connect(_on_opening_completed)
-		_opening.endurance_changed.connect(interface.update_endurance)
-		_opening.status_changed.connect(interface.set_opening_status)
 	if place_player_at_region_spawn:
 		balancer.global_position = region.get_player_spawn()
 		balancer.reset_physics_interpolation()
@@ -91,8 +87,6 @@ func _ready() -> void:
 		civilian_population.start()
 	if city_traffic != null:
 		city_traffic.call(&"start")
-	if demo_guidance:
-		_update_location()
 	_enable_initial_gameplay.call_deferred()
 
 func _configure_city_managers() -> void:
@@ -118,28 +112,6 @@ func _process(delta: float) -> void:
 			_upgrade_delay_remaining = maxf(0.0, _upgrade_delay_remaining - delta)
 			if _upgrade_delay_remaining <= 0.0:
 				_queue_resolution()
-	if not demo_guidance or state != State.RUNNING or get_tree().paused:
-		return
-	_guidance_elapsed += delta
-	if _guidance_elapsed >= 0.5:
-		_guidance_elapsed = 0.0
-		_update_location()
-
-func _update_location() -> void:
-	if _opening != null and not bool(_opening.get(&"is_completed")):
-		interface.update_location("Farm", "Gather wheat life. At SIZE 2.00×, drain a perimeter fence and walk through the gap to escape; or fully consume the farmer to open the northern gate.")
-		return
-	match region.get_zone_at(balancer.global_position):
-		&"field":
-			interface.update_location("Southern fields", "Two wheat fields hold early life. Their farmers guard the crop; the lane north leads to the village.")
-		&"approach":
-			interface.update_location("Village approach", "The lamps mark the way north. Grow in the fields before facing the village resistance.")
-		&"village":
-			interface.update_location("Village", "The village holds firmer life than the fields. Fall back south if you need more life and reach.")
-		&"city":
-			interface.update_location("City outskirts", "Streets and storefronts carry deeper life. The towers wait in the downtown core.")
-		&"downtown":
-			interface.update_location("Downtown", "The tallest towers hold the deepest reserves. Push north to finish the reclamation.")
 
 func _enable_initial_gameplay() -> void:
 	if state == State.RUNNING and not _retry_pending:
@@ -156,7 +128,6 @@ func _start_opening() -> void:
 
 func _on_opening_completed() -> void:
 	balancer.activate_volume_drain()
-	interface.hide_endurance()
 	_queue_resolution()
 
 func _start_escalation() -> void:
@@ -180,6 +151,8 @@ func _refresh_upgrade_timers() -> void:
 			lines.append("Phase · %.1fs" % phase.get_cooldown_remaining() if not phase.is_phase_ready() else "Phase · Ready")
 		if owned.has(&"voidwalker"):
 			lines.append("Voidwalker · %.1fs" % phase.get_void_remaining() if phase.get_void_remaining() > 0.0 else "Voidwalker · Ready on phase")
+		elif phase.get_void_remaining() > 0.0:
+			lines.append("Void · %.1fs" % phase.get_void_remaining())
 		if balancer.last_stand:
 			var status: String = "Armed"
 			if balancer.last_stand_spent:
@@ -190,7 +163,7 @@ func _refresh_upgrade_timers() -> void:
 func _refresh_phase() -> void:
 	var phase: PhaseController = balancer.phase_controller
 	if phase != null:
-		interface.update_phase(phase.is_phase_ready(), phase.get_cooldown_remaining(), phase.get_cooldown_duration(), phase.is_travelling(), phase.get_void_remaining())
+		interface.update_phase(phase.is_phase_ready(), phase.get_cooldown_remaining(), phase.get_cooldown_duration(), phase.is_travelling())
 
 func _notification(what: int) -> void:
 	if what == NOTIFICATION_APPLICATION_FOCUS_OUT and is_node_ready():
@@ -232,11 +205,10 @@ func _on_growth_changed(life: float, size: float) -> void:
 	upgrades.record_life(life)
 	if not had_pending and upgrades.has_pending():
 		_upgrade_delay_remaining = upgrade_delay_seconds
-	interface.update_growth(life, size, upgrades.next_threshold, upgrades.earned_tiers, balancer.volume, balancer.lock_visible_size, balancer.visible_size)
+	interface.update_growth(life, size, upgrades.next_threshold)
 	_queue_resolution()
 
 func _on_progress_changed(drained: float, initial: float) -> void:
-	interface.update_progress(drained, initial)
 	human_director.set_progress(drained, initial)
 	_queue_resolution()
 
@@ -313,7 +285,7 @@ func _apply_upgrade(offer: UpgradeOffer) -> void:
 		_refresh_growth_display()
 
 func _refresh_growth_display() -> void:
-	interface.update_growth(balancer.life, balancer.size, upgrades.next_threshold, upgrades.earned_tiers, balancer.volume, balancer.lock_visible_size, balancer.visible_size)
+	interface.update_growth(balancer.life, balancer.size, upgrades.next_threshold)
 
 func _open_debug_upgrades() -> void:
 	if state != State.RUNNING or _retry_pending or get_tree().paused:

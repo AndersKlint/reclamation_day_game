@@ -25,7 +25,6 @@ var _depletion_effect: DepletionEffect
 var _collapsed: bool = false
 @onready var drainable: Drainable = $Drainable
 @onready var visual: Node3D = $Visual
-@onready var label: Label3D = $Label3D
 
 func _ready() -> void:
 	drainable.emission_offset = Vector3(0.0, dimensions.y * 0.5, 0.0)
@@ -58,10 +57,8 @@ func _ready() -> void:
 	var shape: SphereShape3D = SphereShape3D.new()
 	shape.radius = maxf(0.8, minf(dimensions.x, dimensions.z) * 0.55)
 	$Drainable/CollisionShape3D.shape = shape
-	label.position.y = dimensions.y + 1.0
 	drainable.drained.connect(_on_drained)
 	drainable.collapsed.connect(_on_collapsed)
-	_update_label()
 	if target_label == "Barn":
 		add_to_group(&"shockwave_buildings")
 
@@ -79,7 +76,6 @@ func _on_collapsed() -> void:
 	_start_depletion.call_deferred()
 
 func _start_depletion() -> void:
-	label.hide()
 	set_process(false)
 	_depletion_effect.configure_reward(drainable.take_collapse_life(), drainable.collector)
 	_depletion_effect.flattened.connect(_clear_collision, CONNECT_ONE_SHOT)
@@ -106,7 +102,6 @@ func _on_drained(_amount: float) -> void:
 		return
 	var fraction: float = drainable.drain_fraction()
 	_set_life_fraction(fraction)
-	_update_label()
 
 func renew(duration: float) -> void:
 	if _collapsed or drainable.is_collapsed:
@@ -114,8 +109,6 @@ func renew(duration: float) -> void:
 	_renewing = true
 	if _renewal != null:
 		_renewal.kill()
-	label.text = target_label + (" · new growth" if target_label != "Barn" else " · reclaimed")
-	label.modulate = Color("bad5a1")
 	if duration <= 0.0:
 		_set_renewal(1.0)
 		return
@@ -160,9 +153,3 @@ func _add_model(scene: PackedScene, parent: Node3D, size: Vector3) -> void:
 	else:
 		WorldModel.bind_texture(model, ORCHARD_TEXTURE if scene == ORCHARD_MODEL else MEADOW_TEXTURE, true)
 
-func _update_label() -> void:
-	if drainable.is_collapsed:
-		label.text = target_label + " · spent"
-		label.modulate = Color(0.55, 0.55, 0.55)
-	else:
-		label.text = "%s · needs %.2f m³\n%.2f / %.2f life" % [target_label, drainable.required_volume, drainable.remaining_capacity, drainable.capacity]

@@ -79,6 +79,9 @@ func _ready() -> void:
 	drainable.emission_radius = 0.4
 	drainable.collapsed.connect(_on_collapsed)
 	drainable.drained.connect(_on_drained)
+	var health_bar := preload("res://game/ui/enemy_health_bar.gd").new()
+	add_child(health_bar)
+	health_bar.configure(drainable, _visual.body_dimensions.y + 0.35)
 
 
 func get_model_height() -> float:
