@@ -43,6 +43,7 @@ var _cached_player_radius: float = 0.0
 
 func configure(balancer: CharacterBody3D, model: PackedScene) -> void:
 	player = balancer
+	_drainable.pacifist_protected = true
 	var actor: Node3D = model.instantiate() as Node3D
 	_visual.add_child(actor)
 	actor.rotation.y = PI

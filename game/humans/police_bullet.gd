@@ -71,7 +71,7 @@ func _physics_process(delta: float) -> void:
 				low = middle
 		var impact: Vector3 = start.lerp(end, high)
 		if cover.is_empty() or start.distance_squared_to(impact) < start.distance_squared_to(end):
-			if _balancer.has_method(&"try_reflect_projectile") and bool(_balancer.call(&"try_reflect_projectile")):
+			if _balancer.has_method(&"try_reflect_projectile") and bool(_balancer.call(&"try_reflect_projectile", _direction)):
 				global_position = impact
 				_begin_reflection_return()
 				return

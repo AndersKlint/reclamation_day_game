@@ -10,6 +10,7 @@ class ActiveShockwave:
 	var remaining: float
 	var accumulated_seconds: float
 	var cooldown_remaining: float = 0.0
+	var title: String = ""
 
 	func _init(configuration: ShockwaveEffect) -> void:
 		effect = configuration
@@ -34,6 +35,18 @@ var _active: Array[ActiveShockwave] = []
 var _pending: Array[PendingShockwave] = []
 
 
+func get_timer_lines() -> PackedStringArray:
+	var lines: PackedStringArray = []
+	for active: ActiveShockwave in _active:
+		var remaining: float = active.remaining if active.effect.trigger == ShockwaveEffect.Trigger.PERIODIC else active.cooldown_remaining
+		var status: String = "%.1fs" % remaining if remaining > 0.0 else "Ready"
+		for pending: PendingShockwave in _pending:
+			if pending.active == active:
+				status = "Activating %.1fs" % maxf(pending.remaining, 0.0)
+				break
+		lines.append("%s · %s" % [active.title, status])
+	return lines
+
 func _ready() -> void:
 	set_process(false)
 
@@ -53,7 +66,7 @@ func configure(balancer: CharacterBody3D, world: Node3D, ground_position: Callab
 		_phase.phase_completed.connect(_on_phase_completed)
 
 
-func grant(effect: ShockwaveEffect) -> void:
+func grant(effect: ShockwaveEffect, title: String = "Shockwave") -> void:
 	if effect == null or not effect.is_valid():
 		return
 	if effect.stacking_key != &"":
@@ -62,6 +75,7 @@ func grant(effect: ShockwaveEffect) -> void:
 				active.accumulated_seconds += effect.drain_seconds
 				return
 	_active.append(ActiveShockwave.new(effect))
+	_active[-1].title = title
 	if effect.trigger == ShockwaveEffect.Trigger.PERIODIC or effect.cooldown_seconds > 0.0:
 		set_process(true)
 
@@ -150,6 +164,9 @@ func _emit_shockwave(active: ActiveShockwave, origin: Vector3) -> void:
 	if effect.topple_buildings:
 		for candidate: Node in get_tree().get_nodes_in_group(&"shockwave_buildings"):
 			if not candidate is Node3D or candidate.is_queued_for_deletion():
+				continue
+			var target: Drainable = candidate.get_node_or_null("Drainable") as Drainable
+			if target != null and not _balancer.can_drain_target(target):
 				continue
 			var bounds: AABB = candidate.call(&"get_shockwave_bounds")
 			var closest: Vector3 = origin.clamp(bounds.position, bounds.end)

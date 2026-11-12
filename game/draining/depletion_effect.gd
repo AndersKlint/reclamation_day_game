@@ -187,8 +187,11 @@ func _process(delta: float) -> void:
 	if _magnet_pieces.is_empty():
 		return
 	var step: float = minf(delta, 1.0 / 30.0)
+	var collecting: bool = not _magnet_target.has_method(&"can_collect_rubble") or bool(_magnet_target.call(&"can_collect_rubble"))
+	if not collecting:
+		_previous_magnet_target = Vector3.INF
 	var target_global: Vector3 = _magnet_global_position()
-	var has_target: bool = target_global.is_finite()
+	var has_target: bool = collecting and target_global.is_finite()
 	var target: Vector3 = to_local(target_global) if has_target else Vector3.ZERO
 	var target_start: Vector3 = _previous_magnet_target if _previous_magnet_target.is_finite() else target
 	_previous_magnet_target = target if has_target else Vector3.INF
@@ -197,7 +200,7 @@ func _process(delta: float) -> void:
 		target_velocity = global_basis.inverse() * (_magnet_target as CharacterBody3D).get_real_velocity()
 	var absorption_inverse: Transform3D = Transform3D.IDENTITY
 	var absorption_cone: AbsorptionCone = null
-	var has_absorption: bool = _magnet_target.has_method(&"get_absorption_bounds") and _magnet_target.has_method(&"get_absorption_transform")
+	var has_absorption: bool = collecting and _magnet_target.has_method(&"get_absorption_bounds") and _magnet_target.has_method(&"get_absorption_transform")
 	if has_absorption:
 		var absorption_transform: Transform3D = _magnet_target.call(&"get_absorption_transform")
 		absorption_inverse = absorption_transform.affine_inverse()

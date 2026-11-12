@@ -77,6 +77,10 @@ var _normal_collision_layer: int = 0
 var _normal_collision_mask: int = 0
 var _phase_path: Array[Vector3] = []
 var projectile_reflection_chance: float = 0.0
+var phase_reflection: bool = false
+var last_stand: bool = false
+var last_stand_spent: bool = false
+var last_stand_remaining: float = 0.0
 var effective_movement_speed: float:
 	get:
 		var raw: float = base_movement_speed * _movement_scale() * movement_multiplier
@@ -131,6 +135,11 @@ func _ready() -> void:
 		phase_controller.set_landing_resolver(_resolve_phase_landing)
 	set_gameplay_enabled(false)
 
+var _last_phase_physics_frame: int = -1
+
+func can_collect_rubble() -> bool:
+	return (phase_controller == null or not phase_controller.is_travelling()) and _last_phase_physics_frame != Engine.get_physics_frames()
+
 func _physics_process(delta: float) -> void:
 	if not gameplay_enabled or Input.mouse_mode != Input.MOUSE_MODE_CAPTURED:
 		_exit_phase_collision()
@@ -143,9 +152,11 @@ func _physics_process(delta: float) -> void:
 	if _phase_return_pending:
 		_phase_return_pending = false
 		if _try_phase_return():
+			_last_phase_physics_frame = Engine.get_physics_frames()
 			_tick_phase(delta)
 			return
 	if phase_controller != null and phase_controller.is_travelling():
+		_last_phase_physics_frame = Engine.get_physics_frames()
 		_enter_phase_collision()
 		var phase_step: float = clampf(phase_controller.get_travel_remaining() / maxf(delta, 0.0001), 0.0, 1.0)
 		var travel_velocity: Vector3 = phase_controller.get_travel_velocity() * phase_step
@@ -182,6 +193,7 @@ func _physics_process(delta: float) -> void:
 
 func _tick_phase(delta: float) -> void:
 	if gameplay_enabled and phase_controller != null:
+		last_stand_remaining = maxf(0.0, last_stand_remaining - delta)
 		phase_controller.tick(delta)
 
 func set_gameplay_enabled(enabled: bool) -> void:
@@ -216,7 +228,11 @@ func enable_voidwalker(duration: float) -> void:
 func set_projectile_reflection_chance(chance: float) -> void:
 	projectile_reflection_chance = clampf(chance, 0.0, 1.0) if is_finite(chance) else 0.0
 
-func try_reflect_projectile() -> bool:
+func try_reflect_projectile(incoming_direction: Vector3 = Vector3.ZERO) -> bool:
+	if gameplay_enabled and health > 0.0 and phase_reflection and phase_controller != null and phase_controller.is_travelling():
+		var incoming: Vector3 = Vector3(incoming_direction.x, 0.0, incoming_direction.z)
+		if not incoming.is_zero_approx() and phase_controller.get_travel_direction().dot(-incoming.normalized()) >= 0.0:
+			return true
 	if not gameplay_enabled or health <= 0.0 or projectile_reflection_chance <= 0.0:
 		return false
 	return randf() < projectile_reflection_chance
@@ -482,6 +498,13 @@ func take_damage(amount: float) -> void:
 	if phase_controller != null and phase_controller.is_invulnerable():
 		return
 	var damage: float = maxf(amount * damage_taken_multiplier, MIN_REDUCTION_MULTIPLIER)
+	if damage >= health and last_stand and not last_stand_spent and phase_controller != null:
+		last_stand_spent = true
+		last_stand_remaining = 10.0
+		health = max_health * 0.01
+		phase_controller.grant_void(10.0)
+		health_changed.emit(health, max_health)
+		return
 	health = maxf(0.0, health - damage)
 	var lethal: bool = health <= 0.0
 	if lethal:

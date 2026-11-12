@@ -137,6 +137,10 @@ func enable_voidwalker(duration: float) -> void:
 	_void_enabled = true
 	_void_duration = duration
 
+func grant_void(duration: float) -> void:
+	_void_remaining = maxf(_void_remaining, duration)
+	void_changed.emit(_void_remaining > 0.0)
+
 func get_void_remaining() -> float:
 	return _void_remaining
 
@@ -193,7 +197,7 @@ func _finish_travel(completed: bool) -> void:
 func _refresh_void() -> void:
 	if not _void_enabled or _void_duration <= 0.0:
 		return
-	_void_remaining = _void_duration
+	_void_remaining = maxf(_void_remaining, _void_duration)
 	void_changed.emit(true)
 
 func _begin_presentation() -> void:

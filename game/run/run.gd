@@ -11,6 +11,7 @@ enum State { RUNNING, PAUSED, DEBUG_UPGRADES, CHOOSING, FAILED, REBIRTH, FINISHE
 
 @export_range(0.1, 1.0) var completion_ratio: float = 0.9
 @export_range(0.5, 10.0) var rebirth_duration: float = 4.0
+@export_range(0.0, 30.0, 0.1) var upgrade_delay_seconds: float = 5.0
 @export var region: Node3D
 @export var world_environment: WorldEnvironment
 @export var ground_fog: FogVolume
@@ -30,6 +31,7 @@ var _escalation_started: bool = false
 var _previous_health: float = 0.0
 var _hit_feedback: HitFeedback
 var _voidwalker_presentation: VoidwalkerPresentation
+var _upgrade_delay_remaining: float = 0.0
 
 @onready var balancer: CharacterBody3D = $Balancer
 @onready var human_director: Node3D = $HumanDirector
@@ -80,7 +82,7 @@ func _ready() -> void:
 	if regional_encounters:
 		human_director.configure_region(region)
 	_configure_city_managers()
-	upgrades.configure(balancer.base_volume)
+	upgrades.configure()
 	_on_health_changed(balancer.health, balancer.max_health)
 	_on_growth_changed(balancer.life, balancer.size)
 	_on_progress_changed(region.drained_capacity, region.initial_capacity)
@@ -111,6 +113,11 @@ func _configure_voidwalker_presentation() -> void:
 func _process(delta: float) -> void:
 	if state == State.RUNNING and not get_tree().paused:
 		_refresh_phase()
+		_refresh_upgrade_timers()
+		if upgrades.has_pending():
+			_upgrade_delay_remaining = maxf(0.0, _upgrade_delay_remaining - delta)
+			if _upgrade_delay_remaining <= 0.0:
+				_queue_resolution()
 	if not demo_guidance or state != State.RUNNING or get_tree().paused:
 		return
 	_guidance_elapsed += delta
@@ -164,6 +171,22 @@ func _start_escalation() -> void:
 	if tank_director != null:
 		tank_director.call(&"start")
 
+func _refresh_upgrade_timers() -> void:
+	var lines: PackedStringArray = balancer.shockwave_controller.get_timer_lines()
+	var owned: Array[StringName] = upgrades.get_owned_definitions()
+	var phase: PhaseController = balancer.phase_controller
+	if phase != null:
+		if owned.has(&"phase_cooldown") or owned.has(&"phase_return") or owned.has(&"touche"):
+			lines.append("Phase · %.1fs" % phase.get_cooldown_remaining() if not phase.is_phase_ready() else "Phase · Ready")
+		if owned.has(&"voidwalker"):
+			lines.append("Voidwalker · %.1fs" % phase.get_void_remaining() if phase.get_void_remaining() > 0.0 else "Voidwalker · Ready on phase")
+		if balancer.last_stand:
+			var status: String = "Armed"
+			if balancer.last_stand_spent:
+				status = "Active %.1fs" % balancer.last_stand_remaining if balancer.last_stand_remaining > 0.0 else "Spent"
+			lines.append("Last Stand · " + status)
+	interface.update_upgrade_timers(lines)
+
 func _refresh_phase() -> void:
 	var phase: PhaseController = balancer.phase_controller
 	if phase != null:
@@ -205,7 +228,10 @@ func _on_health_changed(current: float, maximum: float) -> void:
 	_queue_resolution()
 
 func _on_growth_changed(life: float, size: float) -> void:
+	var had_pending: bool = upgrades.has_pending()
 	upgrades.record_life(life)
+	if not had_pending and upgrades.has_pending():
+		_upgrade_delay_remaining = upgrade_delay_seconds
 	interface.update_growth(life, size, upgrades.next_threshold, upgrades.earned_tiers, balancer.volume, balancer.lock_visible_size, balancer.visible_size)
 	_queue_resolution()
 
@@ -233,7 +259,8 @@ func _resolve_update() -> void:
 		return
 	if state != State.RUNNING:
 		return
-	if upgrades.has_pending():
+	var travelling: bool = balancer.phase_controller != null and balancer.phase_controller.is_travelling()
+	if upgrades.has_pending() and _upgrade_delay_remaining <= 0.0 and not travelling:
 		state = State.CHOOSING
 		_hit_feedback.cancel()
 		balancer.set_gameplay_enabled(false)
@@ -250,6 +277,7 @@ func _on_upgrade_selected(offer: UpgradeOffer) -> void:
 	if not upgrades.select_offer(offer):
 		return
 	state = State.RUNNING
+	_upgrade_delay_remaining = upgrade_delay_seconds
 	_apply_upgrade(offer)
 	interface.hide_overlays()
 	_queue_resolution()
@@ -268,7 +296,9 @@ func _apply_upgrade(offer: UpgradeOffer) -> void:
 		offer.variant.healing_disabled, offer.variant.pacifist,
 		offer.variant.proximity_drain_bonus_percent, offer.variant.lock_visible_size,
 		offer.variant.growth_bonus_retention, offer.variant.phase_size_multiplier)
-	balancer.grant_shockwave(offer.variant.shockwave)
+	balancer.phase_reflection = balancer.phase_reflection or offer.variant.phase_reflection
+	balancer.last_stand = balancer.last_stand or offer.variant.last_stand
+	balancer.shockwave_controller.grant(offer.variant.shockwave, offer.definition.title)
 	if offer.variant.phase_return:
 		balancer.enable_phase_return()
 	if offer.variant.projectile_reflection > 0.0:

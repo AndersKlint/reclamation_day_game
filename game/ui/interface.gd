@@ -29,7 +29,11 @@ var _menu_panel: PanelContainer
 var _menu_scroll: ScrollContainer
 var _showing_upgrades: bool = false
 var _debug_upgrades: bool = false
+var _upgrade_timers: Label
 
+
+func update_upgrade_timers(lines: PackedStringArray) -> void:
+	_upgrade_timers.text = "\n".join(lines)
 
 func _ready() -> void:
 	_root = Control.new()
@@ -38,6 +42,14 @@ func _ready() -> void:
 	add_child(_root)
 	_root.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	_root.theme = _make_theme()
+	_upgrade_timers = Label.new()
+	_upgrade_timers.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_root.add_child(_upgrade_timers)
+	_upgrade_timers.set_anchors_and_offsets_preset(Control.PRESET_TOP_RIGHT)
+	_upgrade_timers.grow_horizontal = Control.GROW_DIRECTION_BEGIN
+	_upgrade_timers.position = Vector2(-340.0, 20.0)
+	_upgrade_timers.size.x = 320.0
+	_upgrade_timers.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
 	var margins := MarginContainer.new()
 	_root.add_child(margins)
 	margins.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)

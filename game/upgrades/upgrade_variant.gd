@@ -7,6 +7,8 @@ enum Rarity { COMMON, UNCOMMON, EPIC, LEGENDARY }
 @export var effects: Array[UpgradeStatEffect] = []
 @export var shockwave: ShockwaveEffect
 @export var phase_return: bool = false
+@export var phase_reflection: bool = false
+@export var last_stand: bool = false
 @export_range(0.0, 100.0, 0.1, "suffix:%") var projectile_reflection: float = 0.0
 @export var phase_through_objects: bool = false
 @export_range(0.0, 60.0, 0.1, "suffix:s") var voidwalker_duration: float = 0.0
@@ -50,6 +52,10 @@ func get_description() -> String:
 	if not is_valid():
 		return ""
 	var descriptions: PackedStringArray = PackedStringArray()
+	if phase_reflection:
+		descriptions.append("Phase into incoming bullets within ±90° to reflect them with 100% chance.")
+	if last_stand:
+		descriptions.append("Once per run, survive lethal damage at 1% maximum health and gain 10 seconds of Voidwalker.")
 	for effect: UpgradeStatEffect in effects:
 		descriptions.append(effect.get_description())
 	if shockwave != null:
@@ -63,11 +69,11 @@ func get_description() -> String:
 	if voidwalker_duration > 0.0:
 		descriptions.append("After each completed phase, gain %s seconds of automatic damage immunity at no cost." % _format_value(voidwalker_duration))
 	if not is_equal_approx(size_multiplier, 1.0):
-		descriptions.append("Size and size growth ×%s." % _format_value(size_multiplier))
+		descriptions.append("Size and size growth ×%s, including size-based drain reach, drain power, movement and phase distance. Movement penalties apply afterward." % _format_value(size_multiplier))
 	if healing_disabled:
 		descriptions.append("You can no longer heal.")
 	if pacifist:
-		descriptions.append("Cannot drain humans or enemies, including tanks.")
+		descriptions.append("Cannot drain NPCs, enemies or occupied vehicles. Reflected shots can still kill, but grant no life.")
 	if proximity_drain_bonus_percent > 0.0:
 		descriptions.append("Drain speed rises with proximity, up to +%s%%." % _format_value(proximity_drain_bonus_percent))
 	if lock_visible_size:
@@ -80,6 +86,8 @@ func get_description() -> String:
 
 
 func _has_effect() -> bool:
+	if phase_reflection or last_stand:
+		return true
 	return not effects.is_empty() or shockwave != null or phase_return or projectile_reflection > 0.0 or phase_through_objects or voidwalker_duration > 0.0 or not is_equal_approx(size_multiplier, 1.0) or healing_disabled or pacifist or proximity_drain_bonus_percent > 0.0 or lock_visible_size or not is_equal_approx(growth_bonus_retention, 1.0) or not is_equal_approx(phase_size_multiplier, 1.0)
 
 
