@@ -2,28 +2,33 @@ extends Node3D
 
 const Drainable = preload("res://game/draining/drainable.gd")
 
+class HealthStrip extends Control:
+	var fraction: float = 1.0
+
+	func _draw() -> void:
+		draw_rect(Rect2(0, 0, 34, 4), Color("120d10"))
+		draw_rect(Rect2(1, 1, 32, 2), Color("34151b"))
+		var fill_width: int = clampi(ceili(fraction * 32.0), 0, 32)
+		if fill_width > 0:
+			draw_rect(Rect2(1, 1, fill_width, 2), Color("a4202b"))
+			draw_rect(Rect2(1, 1, fill_width, 1), Color("d04444"))
+
 var _source: Drainable
-var _bar: ProgressBar
+var _bar: HealthStrip
 var _damaged: bool = false
 
 func configure(source: Drainable, height: float) -> void:
 	_source = source
 	position.y = height
+	# Screen projection must follow the camera rig's frame update.
+	process_priority = 100
+	get_global_transform_interpolated()
 	var canvas := CanvasLayer.new()
 	canvas.layer = 1
 	add_child(canvas)
-	_bar = ProgressBar.new()
-	_bar.size = Vector2(56.0, 6.0)
-	_bar.max_value = 1.0
-	_bar.step = 0.0
-	_bar.show_percentage = false
+	_bar = HealthStrip.new()
+	_bar.size = Vector2(34.0, 4.0)
 	_bar.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	var fill := StyleBoxFlat.new()
-	fill.bg_color = Color("bf554d")
-	_bar.add_theme_stylebox_override("fill", fill)
-	var background := StyleBoxFlat.new()
-	background.bg_color = Color("171c20")
-	_bar.add_theme_stylebox_override("background", background)
 	canvas.add_child(_bar)
 	_bar.hide()
 	_source.drained.connect(_on_drained)
@@ -34,7 +39,8 @@ func _on_drained(amount: float) -> void:
 	if amount <= 0.0 or _source.is_collapsed:
 		return
 	_damaged = true
-	_bar.value = _source.drain_fraction()
+	_bar.fraction = _source.drain_fraction()
+	_bar.queue_redraw()
 	set_process(true)
 	_process(0.0)
 
@@ -47,6 +53,7 @@ func _process(_delta: float) -> void:
 	_bar.visible = _damaged and is_visible_in_tree() and is_instance_valid(_source) and not _source.is_collapsed and camera != null
 	if not _bar.visible:
 		return
-	_bar.visible = not camera.is_position_behind(global_position) and camera.is_position_in_frustum(global_position)
+	var rendered_position: Vector3 = get_global_transform_interpolated().origin
+	_bar.visible = not camera.is_position_behind(rendered_position) and camera.is_position_in_frustum(rendered_position)
 	if _bar.visible:
-		_bar.position = camera.unproject_position(global_position) - Vector2(28.0, 8.0)
+		_bar.position = (camera.unproject_position(rendered_position) - Vector2(17.0, 10.0)).round()

@@ -81,7 +81,7 @@ func _ready() -> void:
 	drainable.drained.connect(_on_drained)
 	var health_bar := preload("res://game/ui/enemy_health_bar.gd").new()
 	add_child(health_bar)
-	health_bar.configure(drainable, _visual.body_dimensions.y + 0.35)
+	health_bar.configure(drainable, _visual.body_dimensions.y + 0.175)
 
 
 func get_model_height() -> float:

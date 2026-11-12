@@ -2,6 +2,9 @@ extends RefCounted
 
 const WorldModel = preload("res://game/world/world_model.gd")
 const Catalog = preload("res://game/demo/targets/demo_asset_catalog.gd")
+const Drainable = preload("res://game/draining/drainable.gd")
+const VILLAGE_PROP_LIFE_MULTIPLIER: float = 80.0
+const VILLAGE_PROP_RESISTANCE: float = 0.8
 const MAILBOX = preload("res://available-assets/retro3d-assets/Buildings/Mailbox/LP_Mailbox.fbx")
 const MAILBOX_TEXTURE = preload("res://available-assets/retro3d-assets/Buildings/Mailbox/LP_MailboxBase.png")
 const CRATE = preload("res://available-assets/retro3d-assets/Boxes_Barrels_Crates/crate.fbx")
@@ -70,6 +73,7 @@ static func _prop(region: Node3D, parent: Node3D, scene: PackedScene, texture: T
 	anchor.position = Vector3(p.x, region.ground_height(p.x, p.y) + elevation, p.y)
 	anchor.rotation.y = yaw
 	anchor.ground_position = region.ground_position
+	_configure_village_prop(region, anchor)
 	region._register_target(anchor)
 
 static func _lamp(region: Node3D, parent: Node3D, p: Vector2) -> void:
@@ -107,7 +111,15 @@ static func _lamp(region: Node3D, parent: Node3D, p: Vector2) -> void:
 	target.preserve_model_lights = true
 	target.position = Vector3(p.x, region.ground_height(p.x, p.y), p.y)
 	target.ground_position = region.ground_position
+	_configure_village_prop(region, target)
 	region._register_target(target)
+
+static func _configure_village_prop(region: Node3D, target: Node3D) -> void:
+	if region.get_zone_at(region.to_global(target.position)) != &"village":
+		return
+	var drainable: Drainable = target.get_node("Drainable") as Drainable
+	drainable.life_modifier *= VILLAGE_PROP_LIFE_MULTIPLIER
+	drainable.drain_speed_multiplier *= VILLAGE_PROP_LIFE_MULTIPLIER / VILLAGE_PROP_RESISTANCE
 
 static func _part(parent: Node3D, position: Vector3, dimensions: Vector3, material: Material) -> void:
 	var instance: MeshInstance3D = MeshInstance3D.new()

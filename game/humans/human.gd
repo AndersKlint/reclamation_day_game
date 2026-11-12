@@ -69,7 +69,7 @@ func _ready() -> void:
 	drainable.collapsed.connect(_on_collapsed)
 	var health_bar := preload("res://game/ui/enemy_health_bar.gd").new()
 	add_child(health_bar)
-	health_bar.configure(drainable, _model_dimensions.y + 0.35)
+	health_bar.configure(drainable, WorldModel.bounds(_visual, true).end.y + 0.175)
 	_warning_material = StandardMaterial3D.new()
 	_warning_material.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
 	_warning_material.albedo_color = Color("ffc24b")
