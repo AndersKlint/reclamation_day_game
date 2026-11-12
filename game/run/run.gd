@@ -206,7 +206,7 @@ func _on_health_changed(current: float, maximum: float) -> void:
 
 func _on_growth_changed(life: float, size: float) -> void:
 	upgrades.record_life(life)
-	interface.update_growth(life, size, upgrades.next_threshold, upgrades.earned_tiers, balancer.volume)
+	interface.update_growth(life, size, upgrades.next_threshold, upgrades.earned_tiers, balancer.volume, balancer.lock_visible_size, balancer.visible_size)
 	_queue_resolution()
 
 func _on_progress_changed(drained: float, initial: float) -> void:
@@ -263,7 +263,11 @@ func _on_debug_upgrade_selected(offer: UpgradeOffer) -> void:
 	_on_resume_requested()
 
 func _apply_upgrade(offer: UpgradeOffer) -> void:
-	balancer.apply_upgrade(offer.variant.get_effects())
+	var growth_changed: bool = balancer.apply_upgrade_variant(
+		offer.variant.get_effects(), offer.variant.size_multiplier,
+		offer.variant.healing_disabled, offer.variant.pacifist,
+		offer.variant.proximity_drain_bonus_percent, offer.variant.lock_visible_size,
+		offer.variant.growth_bonus_retention, offer.variant.phase_size_multiplier)
 	balancer.grant_shockwave(offer.variant.shockwave)
 	if offer.variant.phase_return:
 		balancer.enable_phase_return()
@@ -273,10 +277,13 @@ func _apply_upgrade(offer: UpgradeOffer) -> void:
 		balancer.enable_phase_through_objects()
 	if offer.variant.voidwalker_duration > 0.0:
 		balancer.enable_voidwalker(offer.variant.voidwalker_duration)
-	_refresh_growth_display()
+	if growth_changed:
+		balancer.emit_growth_changed()
+	else:
+		_refresh_growth_display()
 
 func _refresh_growth_display() -> void:
-	interface.update_growth(balancer.life, balancer.size, upgrades.next_threshold, upgrades.earned_tiers, balancer.volume)
+	interface.update_growth(balancer.life, balancer.size, upgrades.next_threshold, upgrades.earned_tiers, balancer.volume, balancer.lock_visible_size, balancer.visible_size)
 
 func _open_debug_upgrades() -> void:
 	if state != State.RUNNING or _retry_pending or get_tree().paused:

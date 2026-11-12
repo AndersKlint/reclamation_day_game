@@ -1,0 +1,27 @@
+[gd_resource type="Resource" script_class="UpgradeDefinition" load_steps=6 format=3]
+
+[ext_resource type="Script" path="res://game/upgrades/upgrade_definition.gd" id="1"]
+[ext_resource type="Script" path="res://game/upgrades/upgrade_variant.gd" id="2"]
+[ext_resource type="Script" path="res://game/upgrades/upgrade_stat_effect.gd" id="3"]
+
+[sub_resource type="Resource" id="EpicEffect"]
+script = ExtResource("3")
+stat = 2
+percentage = -20.0
+
+[sub_resource type="Resource" id="Epic"]
+script = ExtResource("2")
+rarity = 2
+effects = Array[ExtResource("3")]([SubResource("EpicEffect")])
+lock_visible_size = true
+growth_bonus_retention = 0.2
+phase_size_multiplier = 0.2
+
+[resource]
+script = ExtResource("1")
+id = &"short_king"
+title = "The short king"
+flavor_text = "Vengeful, like a zombie on a chicken."
+repeatable = false
+variants = Array[ExtResource("2")]([SubResource("Epic")])
+incompatible_ids = Array[StringName]([&"godzilla", &"ape_king"])

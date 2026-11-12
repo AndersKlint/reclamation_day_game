@@ -1,6 +1,7 @@
 extends Node
 
 const PhaseController = preload("res://game/balancer/phase_controller.gd")
+const Drainable = preload("res://game/draining/drainable.gd")
 const BURST_SCENE: PackedScene = preload("res://game/upgrades/shockwave/shockwave_burst.tscn")
 const SOUL_BURST_SCENE: PackedScene = preload("res://game/upgrades/soul_burst/soul_burst.tscn")
 
@@ -143,6 +144,8 @@ func _emit_shockwave(active: ActiveShockwave, origin: Vector3) -> void:
 	var requested_drain: float = _balancer.effective_drain_rate * active.accumulated_seconds
 	var buildings: Array[Node3D] = []
 	var enemies: Array[Node3D] = []
+	var enemy_requests: Array[float] = []
+	var proximity_bonus: float = _balancer.proximity_drain_bonus_percent
 	# Costs and rewards change size, so snapshot recipients and drain power before either.
 	if effect.topple_buildings:
 		for candidate: Node in get_tree().get_nodes_in_group(&"shockwave_buildings"):
@@ -157,18 +160,24 @@ func _emit_shockwave(active: ActiveShockwave, origin: Vector3) -> void:
 			if candidate is Node3D and not candidate.is_queued_for_deletion():
 				if origin.distance_squared_to(candidate.global_position) <= radius_squared:
 					enemies.append(candidate)
+					var target: Drainable = candidate.get_node_or_null("Drainable") as Drainable
+					var amount: float = 0.0
+					if is_instance_valid(target) and not target.is_queued_for_deletion() and _balancer.can_drain_target(target):
+						amount = requested_drain * (1.0 + proximity_bonus / 100.0 * target.get_proximity(origin, radius))
+					enemy_requests.append(amount)
 	active.cooldown_remaining = effect.cooldown_seconds
 	if effect.life_cost > 0.0:
 		_balancer.adjust_life(-effect.life_cost)
 	for building: Node3D in buildings:
 		if is_instance_valid(building) and not building.is_queued_for_deletion():
 			building.call(&"topple_from_shockwave", _balancer)
-	for enemy: Node3D in enemies:
+	for index: int in enemies.size():
+		var enemy: Node3D = enemies[index]
 		if is_instance_valid(enemy) and not enemy.is_queued_for_deletion():
 			if effect.stun_seconds > 0.0:
 				enemy.call(&"apply_stun", effect.stun_seconds)
-			if requested_drain > 0.0 and is_instance_valid(enemy) and not enemy.is_queued_for_deletion():
-				enemy.call(&"receive_drain_burst", requested_drain, source_volume, _balancer)
+			if enemy_requests[index] > 0.0 and is_instance_valid(enemy) and not enemy.is_queued_for_deletion():
+				enemy.call(&"receive_drain_burst", enemy_requests[index], source_volume, _balancer)
 	var burst_scene: PackedScene = SOUL_BURST_SCENE if effect.presentation == ShockwaveEffect.Presentation.SOUL_BURST else BURST_SCENE
 	var burst: Node3D = burst_scene.instantiate() as Node3D
 	_world.add_child(burst)

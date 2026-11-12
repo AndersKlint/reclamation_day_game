@@ -124,8 +124,12 @@ func update_health(current: float, maximum: float) -> void:
 	_health_bar.value = clampf(current / maximum, 0.0, 1.0) if maximum > 0.0 else 0.0
 
 
-func update_growth(life: float, size: float, next_threshold: float, earned_tiers: int = 0, volume: float = 0.0) -> void:
+func update_growth(life: float, size: float, next_threshold: float, earned_tiers: int = 0, volume: float = 0.0, visible_locked: bool = false, visible_size: float = 1.0) -> void:
 	var next_text: String = "NEXT CHOICE AT —" if is_inf(next_threshold) else "NEXT CHOICE AT %s" % _format_amount(next_threshold)
+	if visible_locked:
+		_growth_label.text = "LIFE  %s     VIRTUAL SIZE  %.2f×\nVIRTUAL VOLUME  %s m³     VISIBLE SIZE  %.2f×\nTIER  %d     %s" % [
+			_format_amount(life), size, _format_amount(volume), visible_size, earned_tiers, next_text]
+		return
 	_growth_label.text = "LIFE  %s     SIZE  %.2f×     VOLUME  %s m³\nTIER  %d     %s" % [
 		_format_amount(life), size, _format_amount(volume), earned_tiers, next_text]
 

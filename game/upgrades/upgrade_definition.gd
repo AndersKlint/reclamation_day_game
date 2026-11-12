@@ -6,3 +6,4 @@ extends Resource
 @export_multiline var flavor_text: String = ""
 @export var repeatable: bool = true
 @export var variants: Array[UpgradeVariant] = []
+@export var incompatible_ids: Array[StringName] = []

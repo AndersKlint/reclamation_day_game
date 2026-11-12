@@ -122,7 +122,7 @@ func _process(delta: float) -> void:
 	var local_position: Vector3 = region.to_local(balancer.global_position)
 	var position: Vector2 = Vector2(local_position.x, local_position.z)
 	var radius: float = maxf(float(balancer.get("effective_drain_reach")), 0.0)
-	var footprint: float = minf(radius, maxf(float(balancer.get("size")), 0.0))
+	var footprint: float = minf(radius, maxf(float(balancer.get("visible_size")), 0.0))
 	var changed: bool = false
 	if radius > 0.0 and not _has_sample:
 		changed = _add_stamp(position, radius, footprint) or changed

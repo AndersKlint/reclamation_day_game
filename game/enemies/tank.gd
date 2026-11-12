@@ -107,7 +107,10 @@ func receive_reflected_projectile(collector: Node3D) -> void:
 		return
 	if drainable.is_queued_for_deletion() or drainable.is_collapsed:
 		return
-	drainable.force_collapse(collector)
+	if not is_instance_valid(collector):
+		return
+	var grant_rewards: bool = not collector.has_method(&"can_reward_reflection") or bool(collector.call(&"can_reward_reflection", drainable))
+	drainable.force_collapse(collector, grant_rewards)
 
 func receive_drain_burst(requested_amount: float, source_volume: float, collector: Node3D) -> void:
 	if not is_finite(requested_amount) or requested_amount <= 0.0 or not is_finite(source_volume) or source_volume <= 0.0:

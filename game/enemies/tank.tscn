@@ -21,6 +21,7 @@ shape = SubResource("body")
 
 [node name="Drainable" parent="." instance=ExtResource("2")]
 healing_per_life = 200.0
+pacifist_protected = true
 
 [node name="CollisionShape3D" parent="Drainable" index="0"]
 position = Vector3(0, 1.3, 0)

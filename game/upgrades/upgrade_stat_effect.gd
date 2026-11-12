@@ -4,13 +4,15 @@ extends Resource
 enum Stat { DRAIN_SPEED, DRAIN_RADIUS, MOVEMENT_SPEED, PHASE_COOLDOWN, RESISTANCE, PHASE_DISTANCE }
 
 @export var stat: Stat = Stat.DRAIN_SPEED
-@export_range(0.0, 100.0, 0.1, "or_greater", "suffix:%") var percentage: float = 0.0
+@export_range(-99.9, 100.0, 0.1, "or_greater", "suffix:%") var percentage: float = 0.0
 
 
 func is_valid() -> bool:
-	if not Stat.values().has(stat) or not is_finite(percentage) or percentage < 0.0:
+	if not Stat.values().has(stat) or not is_finite(percentage):
 		return false
-	return not _is_reduction() or percentage < 100.0
+	if _is_reduction():
+		return percentage >= 0.0 and percentage < 100.0
+	return percentage > -100.0
 
 
 func get_key() -> String:
@@ -43,7 +45,7 @@ func get_description() -> String:
 		Stat.DRAIN_RADIUS:
 			label = "drain radius"
 		Stat.MOVEMENT_SPEED:
-			label = "movement speed"
+			label = "movement speed and acceleration"
 		Stat.PHASE_COOLDOWN:
 			label = "phase cooldown"
 		Stat.RESISTANCE:
@@ -52,7 +54,7 @@ func get_description() -> String:
 			label = "phase distance"
 		_:
 			return ""
-	return "%s%s%% %s." % ["-" if _is_reduction() else "+", str(percentage), label]
+	return "%s%s%% %s." % ["-" if _is_reduction() or percentage < 0.0 else "+", str(absf(percentage)), label]
 
 
 func _is_reduction() -> bool:

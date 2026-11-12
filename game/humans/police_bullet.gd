@@ -1,6 +1,5 @@
 extends Node3D
 
-const Balancer = preload("res://game/balancer/balancer.gd")
 const PoliceAudio = preload("res://game/humans/police_audio.gd")
 const SPEED: float = 24.0
 const LIFETIME: float = 1.4
@@ -55,7 +54,7 @@ func _physics_process(delta: float) -> void:
 	if not cover.is_empty():
 		end = cover["position"] as Vector3
 	var radius: float = float(_balancer.call(&"get_combat_radius"))
-	var height: float = Balancer.COMBAT_HEIGHT_PER_SIZE * float(_balancer.get(&"size"))
+	var height: float = float(_balancer.call(&"get_combat_height"))
 	var bottom: Vector3 = _balancer.global_position + Vector3.UP * radius
 	var top: Vector3 = _balancer.global_position + Vector3.UP * maxf(radius, height - radius)
 	var points: PackedVector3Array = Geometry3D.get_closest_points_between_segments(start, end, bottom, top)

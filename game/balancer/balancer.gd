@@ -41,6 +41,16 @@ const PHASE_LANDING_REFINEMENT_PASSES: int = 4
 var gameplay_enabled: bool = false
 var shockwave_controller: ShockwaveController
 var size: float = 1.0
+var size_growth_multiplier: float = 1.0
+var lock_visible_size: bool = false
+var healing_disabled: bool = false
+var pacifist: bool = false
+var proximity_drain_bonus_percent: float = 0.0
+var growth_bonus_retention: float = 1.0
+var phase_size_multiplier: float = 1.0
+var visible_size: float:
+	get:
+		return initial_size if lock_visible_size else size
 var life: float = 0.0
 var base_volume: float = 0.0
 var volume: float:
@@ -77,7 +87,7 @@ var effective_acceleration: float:
 		return maxf(raw, 0.0) if is_finite(raw) else 0.0
 var effective_drain_reach: float:
 	get:
-		var raw: float = base_drain_reach * size * reach_multiplier
+		var raw: float = base_drain_reach * _radius_size() * reach_multiplier
 		return maxf(raw, 0.0) if is_finite(raw) else base_drain_reach
 var effective_drain_rate: float:
 	get:
@@ -117,7 +127,7 @@ func _ready() -> void:
 	drain_area.transfer_effect_requested.connect(drain_vfx.record_transfer, CONNECT_DEFERRED)
 	_refresh_growth()
 	if phase_controller != null:
-		phase_controller.bind(reaper, size)
+		phase_controller.bind(reaper)
 		phase_controller.set_landing_resolver(_resolve_phase_landing)
 	set_gameplay_enabled(false)
 
@@ -227,13 +237,13 @@ func gain_life(amount: float) -> void:
 	growth_changed.emit(life, size)
 
 func request_healing(amount: float) -> void:
-	if not gameplay_enabled or health <= 0.0 or not is_finite(amount) or amount <= 0.0:
+	if healing_disabled or not gameplay_enabled or health <= 0.0 or not is_finite(amount) or amount <= 0.0:
 		return
 	var frame_cap: float = MAX_HEALING_PER_SECOND * maxf(get_physics_process_delta_time(), 0.0)
 	_pending_healing = minf(_pending_healing + amount, frame_cap)
 
 func heal_immediately(amount: float) -> void:
-	if not gameplay_enabled or health <= 0.0 or not is_finite(amount) or amount <= 0.0:
+	if healing_disabled or not gameplay_enabled or health <= 0.0 or not is_finite(amount) or amount <= 0.0:
 		return
 	var healed: float = minf(amount, max_health - health)
 	if healed <= 0.0:
@@ -241,10 +251,25 @@ func heal_immediately(amount: float) -> void:
 	health += healed
 	health_changed.emit(health, max_health)
 
+func set_healing_disabled(disabled: bool) -> void:
+	healing_disabled = disabled
+	if healing_disabled:
+		_pending_healing = 0.0
+
+func can_drain_target(target: Node) -> bool:
+	if not is_instance_valid(target):
+		return false
+	if not pacifist:
+		return true
+	return not bool(target.get(&"pacifist_protected"))
+
+func can_reward_reflection(target: Node) -> bool:
+	return can_drain_target(target)
+
 func _consume_pending_healing(delta: float) -> void:
 	var demand: float = _pending_healing
 	_pending_healing = 0.0
-	if demand <= 0.0 or not gameplay_enabled or health <= 0.0:
+	if demand <= 0.0 or healing_disabled or not gameplay_enabled or health <= 0.0:
 		return
 	var healed: float = minf(minf(demand, MAX_HEALING_PER_SECOND * maxf(delta, 0.0)), max_health - health)
 	if healed <= 0.0:
@@ -264,7 +289,9 @@ func _notification(what: int) -> void:
 func _calculate_size() -> float:
 	var safe_life: float = life if is_finite(life) else 0.0
 	var maximum: float = maxf(initial_size, maximum_size) if is_finite(maximum_size) else initial_size
-	return clampf(pow(pow(initial_size, 3.0) + Scaling.growth_for_life(maxf(0.0, safe_life)) / base_volume, 1.0 / 3.0), initial_size, maximum)
+	var base_size: float = pow(pow(initial_size, 3.0) + Scaling.growth_for_life(maxf(0.0, safe_life)) / base_volume, 1.0 / 3.0)
+	var multiplier: float = size_growth_multiplier if is_finite(size_growth_multiplier) and size_growth_multiplier > 0.0 else 1.0
+	return clampf(multiplier * base_size, initial_size, maximum)
 
 func _unhandled_input(event: InputEvent) -> void:
 	if not gameplay_enabled or Input.mouse_mode != Input.MOUSE_MODE_CAPTURED:
@@ -467,9 +494,39 @@ func grant_shockwave(effect: ShockwaveEffect) -> void:
 	shockwave_controller.grant(effect)
 
 func apply_upgrade(effects: Dictionary[String, float]) -> void:
+	if _apply_effects(effects):
+		_refresh_growth()
+
+func apply_upgrade_variant(effects: Dictionary[String, float], size_multiplier: float, healing_lock: bool, pacifist_effect: bool, proximity_bonus: float, lock_visible: bool, growth_retention: float, phase_multiplier: float) -> bool:
+	if not _apply_effects(effects):
+		return false
+	var previous_size: float = size
+	var previous_visible: float = visible_size
+	if is_finite(size_multiplier) and size_multiplier > 0.0:
+		size_growth_multiplier = clampf(size_growth_multiplier * clampf(size_multiplier, 0.01, MAX_UPGRADE_MULTIPLIER), 0.01, MAX_ACCUMULATED_MULTIPLIER)
+	if healing_lock:
+		set_healing_disabled(true)
+	if pacifist_effect:
+		pacifist = true
+	if is_finite(proximity_bonus) and proximity_bonus > 0.0:
+		proximity_drain_bonus_percent = clampf(proximity_drain_bonus_percent + proximity_bonus, 0.0, MAX_UPGRADE_MULTIPLIER)
+	if lock_visible:
+		lock_visible_size = true
+	if is_finite(growth_retention):
+		growth_bonus_retention = minf(growth_bonus_retention, clampf(growth_retention, 0.0, 1.0))
+	if is_finite(phase_multiplier) and phase_multiplier > 0.0:
+		phase_size_multiplier = minf(phase_size_multiplier, clampf(phase_multiplier, 0.01, MAX_UPGRADE_MULTIPLIER))
+	size = _calculate_size()
+	_refresh_growth()
+	return not is_equal_approx(size, previous_size) or not is_equal_approx(visible_size, previous_visible)
+
+func emit_growth_changed() -> void:
+	growth_changed.emit(life, size)
+
+func _apply_effects(effects: Dictionary[String, float]) -> bool:
 	for effect: float in effects.values():
 		if not is_finite(effect):
-			return
+			return false
 	var movement: float = effects.get("movement_multiplier", 1.0)
 	var reach: float = effects.get("reach_multiplier", 1.0)
 	var rate: float = effects.get("rate_multiplier", 1.0)
@@ -482,19 +539,20 @@ func apply_upgrade(effects: Dictionary[String, float]) -> void:
 	cooldown_multiplier = clampf(cooldown_multiplier * clampf(cooldown, MIN_REDUCTION_MULTIPLIER, MAX_REDUCTION_MULTIPLIER), MIN_REDUCTION_MULTIPLIER, MAX_REDUCTION_MULTIPLIER)
 	damage_taken_multiplier = clampf(damage_taken_multiplier * clampf(damage_taken, MIN_REDUCTION_MULTIPLIER, MAX_REDUCTION_MULTIPLIER), MIN_REDUCTION_MULTIPLIER, MAX_REDUCTION_MULTIPLIER)
 	phase_distance_multiplier = clampf(phase_distance_multiplier * clampf(phase_distance, 0.01, MAX_UPGRADE_MULTIPLIER), 0.01, MAX_ACCUMULATED_MULTIPLIER)
-	_refresh_growth()
+	return true
 
 func _refresh_growth() -> void:
-	visuals.scale = Vector3.ONE * size
-	smoke.configure(size)
+	var display_size: float = visible_size
+	visuals.scale = Vector3.ONE * display_size
+	smoke.configure(display_size)
 	if phase_controller != null:
 		phase_controller.set_upgrade_multipliers(cooldown_multiplier, phase_distance_multiplier)
-		phase_controller.set_body_size(size)
-	collection_point.position.y = 1.25 * size
+		phase_controller.set_sizes(phase_size_multiplier * size, display_size)
+	collection_point.position.y = 1.25 * display_size
 	drain_area.source_volume = volume
 	drain_area.drain_rate = effective_drain_rate
 	drain_area.set_reach(effective_drain_reach)
-	camera_rig.target_size = size
+	camera_rig.target_size = display_size
 	if not _geometry_update_pending:
 		_geometry_update_pending = true
 		_apply_growth_geometry.call_deferred()
@@ -511,9 +569,10 @@ func _apply_growth_geometry() -> void:
 	body_shape.position.y = capsule.height * 0.5
 
 func _physical_body_size() -> float:
-	if not is_finite(size):
+	var display_size: float = visible_size
+	if not is_finite(display_size):
 		return minf(initial_size, PHYSICAL_SIZE_LIMIT)
-	return clampf(size, minf(initial_size, PHYSICAL_SIZE_LIMIT), PHYSICAL_SIZE_LIMIT)
+	return clampf(display_size, minf(initial_size, PHYSICAL_SIZE_LIMIT), PHYSICAL_SIZE_LIMIT)
 
 func get_collection_position() -> Vector3:
 	return collection_point.global_position
@@ -529,8 +588,15 @@ func _movement_scale() -> float:
 	var reference_height: float = get_reference_model_height()
 	if not is_finite(reference_height) or reference_height <= 0.0:
 		return 0.0
-	var scale_factor: float = reference_height * initial_size / movement_reference_height * sqrt(size / initial_size)
+	var growth_factor: float = sqrt(size / initial_size)
+	var scale_factor: float = reference_height * initial_size / movement_reference_height * growth_factor
 	return scale_factor if is_finite(scale_factor) else 0.0
+
+func _radius_size() -> float:
+	var safe_initial: float = initial_size if is_finite(initial_size) and initial_size > 0.0 else 1.0
+	var safe_size: float = size if is_finite(size) else safe_initial
+	var retention: float = growth_bonus_retention if is_finite(growth_bonus_retention) else 1.0
+	return safe_initial + clampf(retention, 0.0, 1.0) * (safe_size - safe_initial)
 
 func get_absorption_transform() -> Transform3D:
 	return visuals.global_transform
@@ -542,11 +608,14 @@ func get_absorption_bounds() -> AABB:
 	return _absorption_bounds
 
 func get_combat_radius() -> float:
-	return COMBAT_RADIUS_PER_SIZE * size
+	return COMBAT_RADIUS_PER_SIZE * visible_size
+
+func get_combat_height() -> float:
+	return COMBAT_HEIGHT_PER_SIZE * visible_size
 
 func get_combat_target(from_position: Vector3) -> Vector3:
 	var radius: float = get_combat_radius()
-	var height: float = COMBAT_HEIGHT_PER_SIZE * size
+	var height: float = get_combat_height()
 	var bottom_center: Vector3 = global_position + Vector3.UP * radius
 	var top_center: Vector3 = global_position + Vector3.UP * maxf(radius, height - radius)
 	if not from_position.is_finite():

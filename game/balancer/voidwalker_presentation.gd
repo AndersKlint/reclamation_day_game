@@ -106,7 +106,7 @@ func _update_depth_fog() -> void:
 	var body_size: float = 1.0
 	if is_instance_valid(_balancer):
 		anchor = _balancer.global_position
-		var size_value: Variant = _balancer.get(&"size")
+		var size_value: Variant = _balancer.get(&"visible_size")
 		if size_value is float or size_value is int:
 			body_size = maxf(float(size_value), 1.0)
 	var pivot: Vector3 = anchor + Vector3.UP * body_size * 1.1

@@ -10,6 +10,13 @@ enum Rarity { COMMON, UNCOMMON, EPIC, LEGENDARY }
 @export_range(0.0, 100.0, 0.1, "suffix:%") var projectile_reflection: float = 0.0
 @export var phase_through_objects: bool = false
 @export_range(0.0, 60.0, 0.1, "suffix:s") var voidwalker_duration: float = 0.0
+@export_range(0.0, 10.0, 0.05, "or_greater") var size_multiplier: float = 1.0
+@export var healing_disabled: bool = false
+@export var pacifist: bool = false
+@export_range(0.0, 100.0, 0.1, "or_greater", "suffix:%") var proximity_drain_bonus_percent: float = 0.0
+@export var lock_visible_size: bool = false
+@export_range(0.0, 1.0, 0.01) var growth_bonus_retention: float = 1.0
+@export_range(0.0, 10.0, 0.05, "or_greater") var phase_size_multiplier: float = 1.0
 
 
 func is_valid() -> bool:
@@ -20,6 +27,14 @@ func is_valid() -> bool:
 	if not is_finite(projectile_reflection) or projectile_reflection < 0.0 or projectile_reflection > 100.0:
 		return false
 	if not is_finite(voidwalker_duration) or voidwalker_duration < 0.0:
+		return false
+	if not is_finite(size_multiplier) or size_multiplier <= 0.0:
+		return false
+	if not is_finite(proximity_drain_bonus_percent) or proximity_drain_bonus_percent < 0.0:
+		return false
+	if not is_finite(growth_bonus_retention) or growth_bonus_retention < 0.0 or growth_bonus_retention > 1.0:
+		return false
+	if not is_finite(phase_size_multiplier) or phase_size_multiplier <= 0.0:
 		return false
 	if shockwave != null and not shockwave.is_valid():
 		return false
@@ -47,11 +62,25 @@ func get_description() -> String:
 		descriptions.append("Phase through objects and land at the nearest safe position along the phase path.")
 	if voidwalker_duration > 0.0:
 		descriptions.append("After each completed phase, gain %s seconds of automatic damage immunity at no cost." % _format_value(voidwalker_duration))
+	if not is_equal_approx(size_multiplier, 1.0):
+		descriptions.append("Size and size growth ×%s." % _format_value(size_multiplier))
+	if healing_disabled:
+		descriptions.append("You can no longer heal.")
+	if pacifist:
+		descriptions.append("Cannot drain humans or enemies, including tanks.")
+	if proximity_drain_bonus_percent > 0.0:
+		descriptions.append("Drain speed rises with proximity, up to +%s%%." % _format_value(proximity_drain_bonus_percent))
+	if lock_visible_size:
+		descriptions.append("Visible size stays at its starting size.")
+	if growth_bonus_retention < 1.0:
+		descriptions.append("Growth-derived radius bonuses are reduced by %s%%." % _format_value((1.0 - growth_bonus_retention) * 100.0))
+	if not is_equal_approx(phase_size_multiplier, 1.0):
+		descriptions.append("Phase distance based on virtual size ×%s." % _format_value(phase_size_multiplier))
 	return "\n".join(descriptions)
 
 
 func _has_effect() -> bool:
-	return not effects.is_empty() or shockwave != null or phase_return or projectile_reflection > 0.0 or phase_through_objects or voidwalker_duration > 0.0
+	return not effects.is_empty() or shockwave != null or phase_return or projectile_reflection > 0.0 or phase_through_objects or voidwalker_duration > 0.0 or not is_equal_approx(size_multiplier, 1.0) or healing_disabled or pacifist or proximity_drain_bonus_percent > 0.0 or lock_visible_size or not is_equal_approx(growth_bonus_retention, 1.0) or not is_equal_approx(phase_size_multiplier, 1.0)
 
 
 func _format_value(value: float) -> String:

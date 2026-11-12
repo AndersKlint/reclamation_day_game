@@ -132,7 +132,10 @@ func receive_reflected_projectile(collector: Node3D) -> void:
 		return
 	if drainable.is_queued_for_deletion() or drainable.is_collapsed:
 		return
-	drainable.force_collapse(collector)
+	if not is_instance_valid(collector):
+		return
+	var grant_rewards: bool = not collector.has_method(&"can_reward_reflection") or bool(collector.call(&"can_reward_reflection", drainable))
+	drainable.force_collapse(collector, grant_rewards)
 
 func _physics_process(delta: float) -> void:
 	if not _active or is_queued_for_deletion():
@@ -332,7 +335,7 @@ func _commit_shot() -> void:
 	_aim = _combat_target(origin)
 	var offset: Vector3 = _aim - origin
 	if Vector2(offset.x, offset.z).is_zero_approx():
-		offset = _balancer.global_position + Vector3.UP * 1.1 * float(_balancer.get("size")) - origin
+		offset = _balancer.global_position + Vector3.UP * float(_balancer.call(&"get_combat_height")) * 0.5 - origin
 	var pitch: float = atan2(offset.y, Vector2(offset.x, offset.z).length())
 	var forward: Vector3 = Vector3(-sin(_visual.global_rotation.y), 0.0, -cos(_visual.global_rotation.y))
 	_shot_direction = (forward * cos(pitch) + Vector3.UP * sin(pitch)).normalized()

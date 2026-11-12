@@ -1,6 +1,5 @@
 extends Node3D
 
-const Balancer = preload("res://game/balancer/balancer.gd")
 const EXPLOSION: PackedScene = preload("res://game/enemies/tank_explosion.tscn")
 const SPEED: float = 24.0
 const LIFETIME: float = 5.0
@@ -87,7 +86,7 @@ func _physics_process(delta: float) -> void:
 
 func _player_hit_fraction(start: Vector3, end: Vector3) -> float:
 	var radius: float = float(_player.call("get_combat_radius"))
-	var height: float = Balancer.COMBAT_HEIGHT_PER_SIZE * float(_player.get("size"))
+	var height: float = float(_player.call(&"get_combat_height"))
 	var bottom: Vector3 = _player.global_position + Vector3.UP * radius
 	var top: Vector3 = _player.global_position + Vector3.UP * maxf(radius, height - radius)
 	var points: PackedVector3Array = Geometry3D.get_closest_points_between_segments(start, end, bottom, top)

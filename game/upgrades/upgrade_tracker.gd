@@ -69,6 +69,8 @@ func select_offer(offer: UpgradeOffer) -> bool:
 	var definition: UpgradeDefinition = offer.definition
 	if not _valid_definition(definition) or not definition.variants.has(offer.variant):
 		return false
+	if not _is_compatible(definition):
+		return false
 	if not definition.repeatable and _ownership.has(definition.id):
 		return false
 	_ownership[definition.id] = _ownership.get(definition.id, 0) + 1
@@ -80,6 +82,8 @@ func select_offer(offer: UpgradeOffer) -> bool:
 func get_debug_offers() -> Array[UpgradeOffer]:
 	var offers: Array[UpgradeOffer] = []
 	for definition: UpgradeDefinition in _catalog_definitions():
+		if not _is_compatible(definition):
+			continue
 		for variant: UpgradeVariant in definition.variants:
 			offers.append(UpgradeOffer.new(definition, variant))
 	offers.sort_custom(_debug_offer_before)
@@ -100,6 +104,8 @@ func grant_debug_offer(offer: UpgradeOffer) -> bool:
 	if not _catalog_definitions().has(definition):
 		return false
 	if not definition.variants.has(offer.variant):
+		return false
+	if not _is_compatible(definition):
 		return false
 	if not definition.repeatable and _ownership.has(definition.id):
 		return false
@@ -140,9 +146,18 @@ func _debug_offer_before(a: UpgradeOffer, b: UpgradeOffer) -> bool:
 func _eligible_definitions() -> Array[UpgradeDefinition]:
 	var eligible: Array[UpgradeDefinition] = []
 	for definition: UpgradeDefinition in _catalog_definitions():
+		if not _is_compatible(definition):
+			continue
 		if definition.repeatable or not _ownership.has(definition.id):
 			eligible.append(definition)
 	return eligible
+
+
+func _is_compatible(definition: UpgradeDefinition) -> bool:
+	for incompatible_id: StringName in definition.incompatible_ids:
+		if _ownership.has(incompatible_id):
+			return false
+	return true
 
 
 func _valid_definition(definition: UpgradeDefinition) -> bool:

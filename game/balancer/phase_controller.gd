@@ -20,7 +20,7 @@ const MAX_COOLDOWN: float = 1.0e100
 
 var _state: State = State.READY
 var _travel_remaining: float = 0.0
-var _body_size: float = 1.0
+var _travel_size: float = 1.0
 var _travel_velocity: Vector3 = Vector3.ZERO
 var _cooldown_remaining: float = 0.0
 var _cooldown_multiplier: float = 1.0
@@ -46,14 +46,13 @@ func _ready() -> void:
 	_audio.name = "PhaseAudio"
 	add_child(_audio)
 
-func bind(reaper: Node3D, body_size: float) -> void:
+func bind(reaper: Node3D) -> void:
 	_reaper = reaper
-	set_body_size(body_size)
 
-func set_body_size(body_size: float) -> void:
-	_body_size = maxf(body_size, 0.001) if is_finite(body_size) else 1.0
+func set_sizes(travel_size: float, presentation_size: float) -> void:
+	_travel_size = maxf(travel_size, 0.001) if is_finite(travel_size) else 1.0
 	if _vfx != null:
-		_vfx.configure(_body_size)
+		_vfx.configure(maxf(presentation_size, 0.001) if is_finite(presentation_size) else 1.0)
 
 func set_upgrade_multipliers(cooldown: float, distance: float) -> void:
 	if not is_finite(cooldown) or not is_finite(distance):
@@ -77,7 +76,7 @@ func try_activate(direction: Vector3) -> bool:
 	_return_available = false
 	_direction = flat.normalized()
 	_travel_remaining = maxf(travel_time, 0.001)
-	_travel_velocity = _direction * (maxf(travel_distance, 0.0) * _distance_multiplier * _body_size / _travel_remaining)
+	_travel_velocity = _direction * (maxf(travel_distance, 0.0) * _distance_multiplier * _travel_size / _travel_remaining)
 	_state = State.TRAVELLING
 	_begin_presentation()
 	if _audio != null:

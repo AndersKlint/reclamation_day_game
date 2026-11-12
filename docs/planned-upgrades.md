@@ -1,6 +1,6 @@
 # Upgrade catalog
 
-The full upgrade catalog contains 21 upgrades: fifteen implemented and six planned. Names are display titles; effect descriptions use ordinary stat names.
+The full upgrade catalog contains 21 implemented upgrades. Names are display titles; effect descriptions use ordinary stat names.
 
 ## Selection and stacking
 
@@ -11,7 +11,7 @@ The full upgrade catalog contains 21 upgrades: fifteen implemented and six plann
 - Upgraded stats retain their growth scaling. Movement speed and acceleration scale together. Phase distance changes do not change phase duration.
 - The base phase cooldown is 8 seconds, eight times the previous 1 second. Phaseless applies its normal multiplicative reductions to this base.
 - Increasing drain speed does not increase the total reward available from a finite target.
-- Planned effects below preserve design intent; unresolved parameters are not balance commitments.
+- The short king is mutually exclusive with Godzilla and The Ape King, in either pickup order; the two giants can be combined.
 
 ## Editing upgrades
 
@@ -20,7 +20,8 @@ The full upgrade catalog contains 21 upgrades: fifteen implemented and six plann
 - For special shockwaves, edit `UpgradeVariant.shockwave` as a `ShockwaveEffect` alongside stat effects. Its settings are trigger (`PERIODIC` or `PHASE_COMPLETED`), presentation (`SHOCKWAVE` by default, `SOUL_BURST` for Outcry), `interval_seconds`, `delay_seconds`, `radius_multiplier`, `stun_seconds`, `topple_buildings`, `life_cost`, `cooldown_seconds`, `drain_seconds`, and `stacking_key`. The latter four configure consumed-life cost, successful-activation cooldown, drain-equivalent burst duration, and shared pulse stacking respectively. `delay_seconds` postpones the entire burst, including gameplay, visuals, and sound, in active gameplay time; it defaults to zero. Outcry leaves `stacking_key` empty and is not repeatable.
 - Enable the optional variant `phase_return` field for Phase time's return ability.
 - Set `projectile_reflection` for Uno's reflect chance percentage, `phase_through_objects` for Phasetastic's object traversal and safe landing, and `voidwalker_duration` for Voidwalker's automatic post-phase immunity seconds.
-- Positive percentages increase speed, radius, or distance; for phase cooldown and resistance they reduce cooldown or damage taken. For example, movement speed `15` means +15% (×1.15), movement speed `200` means +200% (×3), and phase cooldown `20` means a 20% reduction (×0.8). Movement acceleration follows movement speed.
+- Special variant fields are `size_multiplier`, `healing_disabled`, `pacifist`, `proximity_drain_bonus_percent`, `lock_visible_size`, `growth_bonus_retention`, and `phase_size_multiplier`. Set definition `incompatible_ids` to exclude conflicting upgrade IDs.
+- Positive percentages increase speed, radius, or distance; signed values above −100% allow penalties. For phase cooldown and resistance, nonnegative percentages below 100 reduce cooldown or damage taken. For example, movement speed `15` means +15% (×1.15), movement speed `-50` means ×0.5, and phase cooldown `20` means a 20% reduction (×0.8). Movement acceleration follows movement speed.
 - Open `game/upgrades/upgrade_catalog.tres` to edit the definitions included in the offer pool and their rarity weights. Default Common/Uncommon/Epic/Legendary weights are `59/30/9/2`; weights are relative, not required to total 100.
 - Effect descriptions are generated from the variant's stat effects, shockwave configuration, phase-return setting, and special variant settings; do not author separate effect descriptions. Flavor text remains separately editable.
 
@@ -41,12 +42,12 @@ The full upgrade catalog contains 21 upgrades: fifteen implemented and six plann
 | Phase time | Implemented | E | One safe instant return to phase start during that phase's cooldown; preserves cooldown |
 | Phasplosion | Implemented | L | 0.5 seconds after phase completion, landing shockwave topples buildings within current drain radius and stuns hostiles for 3 seconds; gameplay, visuals, and sound delayed together |
 | Outcry | Implemented | E | Once per run; every 30 active play seconds, burst-drain hostiles within current drain radius for 8 seconds of normal drain |
-| The Unforgiven | Planned | L | No healing; damage dealt ×5 |
-| Godzilla | Planned | L | Current size ×2 on acquisition, twice usual consumed-life size growth, movement speed halved |
-| The Ape King | Planned | L | Size +50%; consumed-life growth scales accordingly |
-| Just a little bit closer | Planned | L | Proximity-based drain speed, up to +300%; drain radius halved |
-| Pacifist | Planned | U | Ignore living creatures; drain speed ×2 |
-| The short king | Planned | E | Starting visible size retained; virtual growth with reduced growth-derived radius and speed bonuses |
+| The Unforgiven | Implemented | L | No healing; drain speed ×5 |
+| Godzilla | Implemented | L | Entire linear size curve ×2; movement speed and acceleration ×0.5 |
+| The Ape King | Implemented | L | Entire linear size curve ×1.5 |
+| Just a little bit closer | Implemented | L | Proximity-based drain speed, up to +300%; drain radius halved |
+| Pacifist | Implemented | U | Cannot drain humans or enemies, including tanks; drain speed ×2 |
+| The short king | Implemented | E | Starting visible size retained; reduced growth-derived radius, movement speed and acceleration ×0.8 |
 | Earthquake | Implemented | E | Topple buildings within current drain radius every 120 active gameplay seconds after pickup |
 | Uno | Implemented | E | Reflect projectiles at 50% chance; reflection kills the shooter |
 
@@ -162,47 +163,48 @@ The full upgrade catalog contains 21 upgrades: fifteen implemented and six plann
 
 *“The most powerful card.”*
 
-- **Epic, once per run:** Each incoming police bullet or tank shell has a fixed 50% chance to reflect back toward its shooter. A reflected projectile kills the shooter through the normal collapse and reward path.
-
-## Planned upgrades
+- **Epic, once per run:** Each incoming police bullet or tank shell has a fixed 50% chance to reflect back toward its shooter. A reflected projectile kills the shooter through the normal collapse and reward path, except with Pacifist as described below.
 
 ### The Unforgiven
 
-- **Legendary, once per run:** You can no longer heal, but deal five times as much damage: damage dealt ×5, not damage taken.
-- **Flavor:** Unspecified.
+- **Legendary, once per run:** All healing is blocked; drain speed ×5 applies independently to every eligible target, including normal and Outcry burst drain. Finite target rewards do not increase.
+- **Inspector:** `unforgiven`, drain speed `400`, `healing_disabled = true`. Flavor text is empty.
 
 ### Godzilla
 
 *“That ape is just an ant compared to you.”*
 
-- **Legendary, once per run:** Double current size on acquisition, gain consumed-life size growth at twice the usual rate, and halve movement speed. Acceleration scales with movement speed.
-- **Unresolved:** Exact size-growth formula and interactions with other size/growth effects.
+- **Legendary, once per run:** Multiply the entire linear size curve by 2, immediately and for future growth. Movement speed and acceleration are multiplied by 0.5 after growth scaling.
+- With The Ape King, linear size is ×3 and virtual volume ×27 versus the unmodified curve at the same consumed life. Neither grants life or growth tiers. Incompatible with The short king.
+- **Inspector:** `godzilla`, `size_multiplier = 2`, movement speed `-50`, `incompatible_ids = [short_king]`.
 
 ### The Ape King
 
 *“Kong is no longer your king.”*
 
-- **Legendary, once per run:** Increase size by 50%; consumed-life growth also scales accordingly.
-- **Unresolved:** Precise interpretation of the growth scaling.
+- **Legendary, once per run:** Multiply the entire linear size curve by 1.5, immediately and for future growth. Combines multiplicatively with Godzilla; incompatible with The short king.
+- **Inspector:** `ape_king`, `size_multiplier = 1.5`, `incompatible_ids = [short_king]`.
 
 ### Just a little bit closer
 
 *“The closer they are, the more dangerous it gets.”*
 
-- **Legendary, once per run:** Proximity increases drain speed by up to +300%; halve drain radius.
-- **Unresolved:** Proximity falloff.
+- **Legendary, once per run:** Halve drain radius. Per target, drain speed rises linearly from ×1 at the edge to ×4 at contact, using approximate horizontal distance to the target surface. This applies to normal drain and each target in an Outcry snapshot.
+- **Inspector:** `proximity_drain`, drain radius `-50`, `proximity_drain_bonus_percent = 300`.
 
 ### Pacifist
 
 *“Let nature have its way.”*
 
-- **Uncommon, once per run:** Ignore living creatures; drain speed ×2.
-- **Unresolved:** Which target categories count as living creatures.
+- **Uncommon, once per run:** Drain speed ×2; normal drain and Outcry ignore all humans and enemies, including tanks. Plants and scenery remain eligible; nonlethal stuns remain allowed.
+- Uno still kills reflected shooters, but grants no life, healing, growth, or kill credit. Rewards committed before pickup are not erased.
+- **Inspector:** `pacifist`, drain speed `100`, `pacifist = true`.
 
 ### The short king
 
 *“Vengeful, like a zombie on a chicken.”*
 
-- **Epic, once per run:** Lock visible size to starting size. Virtual growth retains drain power and range progression, but growth-derived radius and speed bonuses are reduced by 80%.
-- This reduction applies to growth-derived bonuses, not necessarily to total radius or movement speed. Acceleration follows movement speed scaling.
-- **Unresolved:** Exact virtual-growth formula and how retained range progression combines with the reduced radius bonus.
+- **Epic, once per run:** Body, combat collision, camera, and body-local effects stay at initial visible size. Virtual size retains full drain power and target eligibility; the opening fence threshold remains virtual size 2.
+- For initial size `S0` and virtual size `S`, radius uses `S0 + 0.2 × (S − S0)`; movement speed and acceleration use normal virtual-size growth `sqrt(S / S0)` and are multiplied by 0.8. Other ordinary stat multipliers apply fully.
+- Phase distance uses `0.2 × S` as its size input, with Phar applied afterward; phase duration is unchanged. Incompatible with Godzilla and The Ape King in either order.
+- **Inspector:** `short_king`, movement speed `-20`, `lock_visible_size = true`, `growth_bonus_retention = 0.2`, `phase_size_multiplier = 0.2`, `incompatible_ids = [godzilla, ape_king]`.

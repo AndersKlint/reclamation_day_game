@@ -25,24 +25,22 @@ func _physics_process(delta: float) -> void:
 		var target: Drainable = _targets[index]
 		if not is_instance_valid(target) or target.is_queued_for_deletion() or target.is_collapsed:
 			_targets.remove_at(index)
-		elif target.can_drain(source_volume):
+		elif target.can_drain(source_volume) and is_instance_valid(collector) and (not collector.has_method(&"can_drain_target") or bool(collector.call(&"can_drain_target", target))):
 			eligible.append(target)
 	if eligible.is_empty():
 		return
 	var request: float = drain_rate * delta
 	var absorbed: float = 0.0
 	for target: Drainable in eligible:
-		if not enabled:
+		if not enabled or not is_instance_valid(collector) or collector.is_queued_for_deletion():
 			break
 		if is_instance_valid(target) and not target.is_queued_for_deletion():
 			var source_id: int = target.get_instance_id()
 			var source_position: Vector3 = target.get_effect_position()
 			var source_radius: float = target.get_effect_radius()
-			var offset: Vector3 = target.global_position - global_position
-			offset.y = 0.0
-			var surface_distance: float = maxf(0.0, offset.length() - source_radius)
-			var proximity: float = 1.0 - clampf(surface_distance / maxf(_reach, 0.001), 0.0, 1.0)
-			var amount: float = target.drain(request, source_volume, collector)
+			var proximity: float = target.get_proximity(global_position, _reach)
+			var bonus: float = float(collector.get(&"proximity_drain_bonus_percent"))
+			var amount: float = target.drain(request * (1.0 + bonus / 100.0 * proximity), source_volume, collector)
 			absorbed += amount
 			if amount > 0.0:
 				transfer_effect_requested.emit(source_id, source_position, source_radius, amount / delta, proximity)
