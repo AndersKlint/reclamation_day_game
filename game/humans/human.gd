@@ -6,7 +6,7 @@ const Drainable = preload("res://game/draining/drainable.gd")
 const WorldModel = preload("res://game/world/world_model.gd")
 const POLICE_BULLET: PackedScene = preload("res://game/humans/police_bullet.tscn")
 const PoliceAudio = preload("res://game/humans/police_audio.gd")
-const COMBAT_TURN_RATE: float = deg_to_rad(120.0)
+const COMBAT_TURN_RATE: float = deg_to_rad(240.0)
 
 @export var ranged: bool = false
 @export var movement_speed: float = 3.7

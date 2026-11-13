@@ -1,6 +1,12 @@
 extends Node3D
 
 const EXPLOSION: PackedScene = preload("res://game/enemies/tank_explosion.tscn")
+const CANNON_SOUNDS: Array[AudioStream] = [
+	preload("res://available-assets/sfx/prosoundcollection/Gamemaster Audio - Pro Sound Collection v1.3 - 16bit 48k/Guns_Weapons/Guns/gun_tank_cannon_turret_shot_01.wav"),
+	preload("res://available-assets/sfx/prosoundcollection/Gamemaster Audio - Pro Sound Collection v1.3 - 16bit 48k/Guns_Weapons/Guns/gun_tank_cannon_turret_shot_02.wav"),
+	preload("res://available-assets/sfx/prosoundcollection/Gamemaster Audio - Pro Sound Collection v1.3 - 16bit 48k/Guns_Weapons/Guns/gun_tank_cannon_turret_shot_03.wav"),
+	preload("res://available-assets/sfx/prosoundcollection/Gamemaster Audio - Pro Sound Collection v1.3 - 16bit 48k/Guns_Weapons/Guns/gun_tank_cannon_turret_shot_04.wav"),
+]
 const SPEED: float = 24.0
 const LIFETIME: float = 5.0
 const RADIUS: float = 0.25
@@ -19,6 +25,8 @@ var _shape: SphereShape3D = SphereShape3D.new()
 var _impacted: bool = false
 var _returning: bool = false
 
+@onready var _launch_sound: AudioStreamPlayer3D = $LaunchSound
+
 func configure(player: CharacterBody3D, origin: Vector3, direction: Vector3, damage: float, blast_radius: float, shooter: Node3D) -> void:
 	_player = player
 	_shooter = shooter
@@ -31,6 +39,14 @@ func configure(player: CharacterBody3D, origin: Vector3, direction: Vector3, dam
 	if not _direction.is_zero_approx():
 		look_at(origin + _direction, Vector3.FORWARD if absf(_direction.y) > 0.99 else Vector3.UP)
 	reset_physics_interpolation()
+	var target: Vector3 = _player.call("get_combat_target", origin)
+	var proximity: float = clampf(1.0 - origin.distance_to(target) / 240.0, 0.0, 1.0)
+	_launch_sound.volume_db = -4.0 + linear_to_db(maxf(proximity * proximity, 0.0001))
+	_launch_sound.stream = CANNON_SOUNDS.pick_random()
+	_launch_sound.pitch_scale = randf_range(0.92, 1.0)
+	_launch_sound.reparent(get_parent(), true)
+	_launch_sound.finished.connect(_launch_sound.queue_free)
+	_launch_sound.play()
 
 func _notification(what: int) -> void:
 	if what == NOTIFICATION_PAUSED and not _returning:

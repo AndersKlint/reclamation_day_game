@@ -7,20 +7,17 @@ const DEPLETION_SCRIPT = preload("res://game/draining/depletion_effect.gd")
 const Drainable = preload("res://game/draining/drainable.gd")
 const WorldModel = preload("res://game/world/world_model.gd")
 const SHELL: PackedScene = preload("res://game/enemies/tank_shell.tscn")
-const CANNON_SOUNDS: Array[AudioStream] = [
-	preload("res://available-assets/sfx/prosoundcollection/Gamemaster Audio - Pro Sound Collection v1.3 - 16bit 48k/Guns_Weapons/Guns/gun_tank_cannon_turret_shot_01.wav"),
-	preload("res://available-assets/sfx/prosoundcollection/Gamemaster Audio - Pro Sound Collection v1.3 - 16bit 48k/Guns_Weapons/Guns/gun_tank_cannon_turret_shot_02.wav"),
-	preload("res://available-assets/sfx/prosoundcollection/Gamemaster Audio - Pro Sound Collection v1.3 - 16bit 48k/Guns_Weapons/Guns/gun_tank_cannon_turret_shot_03.wav"),
-	preload("res://available-assets/sfx/prosoundcollection/Gamemaster Audio - Pro Sound Collection v1.3 - 16bit 48k/Guns_Weapons/Guns/gun_tank_cannon_turret_shot_04.wav"),
-]
+const GRENADE: PackedScene = preload("res://game/enemies/tank_grenade.tscn")
 const MUZZLE_HEIGHT: float = 1.9
 const MUZZLE_FORWARD: float = 2.6
 const WORLD_LAYER: int = 1
 const CAR_LAYER: int = 16
 const OBSTACLE_MASK: int = WORLD_LAYER | CAR_LAYER
 const AGGRO_HYSTERESIS: float = 10.0
+const GRENADE_COUNT: int = 8
+const GRENADE_RADIUS: float = 0.2
 
-enum State { PATROL, WINDUP }
+enum State { PATROL, WINDUP, GRENADE_SWEEP }
 
 @export var movement_speed: float = 4.0
 @export var turn_rate: float = 0.6
@@ -33,6 +30,14 @@ enum State { PATROL, WINDUP }
 @export var windup: float = 2.0
 @export var cooldown: float = 6.5
 @export var impact_radius: float = 4.5
+@export var grenade_range: float = 12.0
+@export var grenade_ring_radius: float = 8.0
+@export var grenade_damage: float = 12.0
+@export var grenade_blast_radius: float = 3.0
+@export var grenade_interval: float = 0.2
+@export var grenade_flight_time: float = 0.8
+@export var grenade_fuse: float = 1.5
+@export var grenade_cooldown: float = 9.0
 
 var state: State = State.PATROL
 var _player: CharacterBody3D
@@ -45,6 +50,11 @@ var _depleted: bool = false
 var _waypoint: int = 1
 var _windup_left: float = 0.0
 var _cooldown_left: float = 1.5
+var _grenade_cooldown_left: float = 0.0
+var _grenade_timer: float = 0.0
+var _grenades_launched: int = 0
+var _sweep_position: Vector3
+var _sweep_forward: Vector3
 var _aim: Vector3
 var _aim_committed: bool = false
 var _committed_direction: Vector3 = Vector3.ZERO
@@ -61,7 +71,6 @@ var _route_started: bool = false
 var _ground_position: Callable
 @onready var drainable: Drainable = $Drainable
 @onready var _visual: Node3D = $Visual
-@onready var _fire_voice: AudioStreamPlayer3D = $CannonShot
 
 func configure(player: CharacterBody3D, region: Node3D, route: PackedVector3Array, heavy: bool = false) -> void:
 	_player = player
@@ -85,8 +94,6 @@ func stop() -> void:
 	cancel_attack()
 	_clear_shells()
 	velocity = Vector3.ZERO
-	if is_instance_valid(_fire_voice):
-		_fire_voice.stop()
 
 func cancel_attack() -> void:
 	state = State.PATROL
@@ -141,7 +148,7 @@ func is_engaged() -> bool:
 		return false
 	if float(_player.get("health")) <= 0.0:
 		return false
-	return state == State.WINDUP or (_engaged and _target_distance() <= _pursuit.aggro_radius + AGGRO_HYSTERESIS)
+	return state == State.WINDUP or state == State.GRENADE_SWEEP or (_engaged and _target_distance() <= _pursuit.aggro_radius + AGGRO_HYSTERESIS)
 
 func _clear_shells() -> void:
 	for shell: Node3D in _shells:
@@ -203,8 +210,11 @@ func _physics_process(delta: float) -> void:
 	if not _route_started:
 		_start_route()
 	_cooldown_left = maxf(0.0, _cooldown_left - delta)
+	_grenade_cooldown_left = maxf(0.0, _grenade_cooldown_left - delta)
 	if state == State.WINDUP:
 		_process_windup(delta)
+	elif state == State.GRENADE_SWEEP:
+		_process_grenade_sweep(delta)
 	else:
 		_process_patrol(delta)
 
@@ -212,7 +222,7 @@ func _process_windup(delta: float) -> void:
 	var tracking_time: float = minf(delta, maxf(0.0, _windup_left - maxf(0.05, windup) * 0.5))
 	if not _aim_committed:
 		_aim = _ground_point(_player.global_position)
-		_face(_aim - global_position, tracking_time, turn_rate)
+		_face(_aim - global_position, tracking_time, turn_rate * 2.0)
 	_windup_left = maxf(0.0, _windup_left - delta)
 	if not _aim_committed and _windup_left <= maxf(0.05, windup) * 0.5:
 		var origin: Vector3 = _muzzle_position()
@@ -273,6 +283,9 @@ func _update_engagement() -> void:
 
 func _process_pursuit(delta: float) -> void:
 	var target: Vector3 = _player.call("get_combat_target", global_position)
+	if _grenade_cooldown_left <= 0.0 and _flat(target - global_position).length() <= grenade_range:
+		_begin_grenade_sweep()
+		return
 	if _flat(target - global_position).length() <= attack_range and _has_line_of_sight(target):
 		if _cooldown_left <= 0.0:
 			_begin_attack()
@@ -345,6 +358,40 @@ func _begin_attack() -> void:
 	_windup_left = maxf(0.05, windup)
 	state = State.WINDUP
 	velocity = Vector3.ZERO
+
+func _begin_grenade_sweep() -> void:
+	state = State.GRENADE_SWEEP
+	velocity = Vector3.ZERO
+	_sweep_position = global_position
+	_sweep_forward = _flat(-global_basis.z).normalized()
+	_grenades_launched = 0
+	_grenade_cooldown_left = maxf(0.0, grenade_cooldown)
+	_launch_grenade()
+	_grenades_launched = 1
+	_grenade_timer = maxf(0.01, grenade_interval)
+
+func _process_grenade_sweep(delta: float) -> void:
+	_drive(Vector3.ZERO, delta)
+	_grenade_timer -= delta
+	while _grenade_timer <= 0.0 and _grenades_launched < GRENADE_COUNT:
+		_launch_grenade()
+		_grenades_launched += 1
+		_grenade_timer += maxf(0.01, grenade_interval)
+	if _grenades_launched >= GRENADE_COUNT:
+		state = State.PATROL
+
+func _launch_grenade() -> void:
+	var direction: Vector3 = _sweep_forward.rotated(Vector3.UP, -TAU * _grenades_launched / GRENADE_COUNT)
+	var origin: Vector3 = _sweep_position + Vector3.UP * MUZZLE_HEIGHT
+	var destination: Vector3 = _ground_point(_sweep_position + direction * grenade_ring_radius) + Vector3.UP * GRENADE_RADIUS
+	var flight_time: float = maxf(0.05, grenade_flight_time)
+	var gravity: Vector3 = Vector3.DOWN * float(ProjectSettings.get_setting("physics/3d/default_gravity", 9.8))
+	var launch_velocity: Vector3 = (destination - origin - 0.5 * gravity * flight_time * flight_time) / flight_time
+	var grenade: Node3D = GRENADE.instantiate() as Node3D
+	get_parent().add_child(grenade)
+	grenade.configure(_player, origin, launch_velocity, grenade_damage, grenade_blast_radius, grenade_fuse, self)
+	_shells = _shells.filter(func(existing: Node3D) -> bool: return is_instance_valid(existing))
+	_shells.append(grenade)
 
 func _follow_route(delta: float) -> void:
 	if _route.size() < 2:
@@ -436,10 +483,6 @@ func _resolve_attack() -> void:
 	shell.configure(_player, origin, direction, damage, impact_radius, self)
 	_shells = _shells.filter(func(existing: Node3D) -> bool: return is_instance_valid(existing))
 	_shells.append(shell)
-	_fire_voice.global_position = origin
-	_fire_voice.stream = CANNON_SOUNDS.pick_random()
-	_fire_voice.pitch_scale = randf_range(0.92, 1.0)
-	_fire_voice.play()
 
 func _start_route() -> void:
 	_route_started = true

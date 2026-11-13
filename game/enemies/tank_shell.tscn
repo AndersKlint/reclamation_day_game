@@ -35,3 +35,8 @@ mesh = SubResource("shell_mesh")
 [node name="HotCore" type="MeshInstance3D" parent="."]
 position = Vector3(0, 0, 0.38)
 mesh = SubResource("core_mesh")
+
+[node name="LaunchSound" type="AudioStreamPlayer3D" parent="."]
+process_mode = 1
+attenuation_model = 3
+volume_db = -4.0
