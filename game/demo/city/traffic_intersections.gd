@@ -22,6 +22,7 @@ class TrafficCar:
 	var axis: Vector2
 	var collidable: bool = false
 	var clearing: WeakRef
+	var waiting_for_signal: bool = false
 
 class Request:
 	var car: WeakRef
@@ -146,6 +147,8 @@ func speed_limit(car: Node3D, forward: Vector3, front_extent: float, brake: floa
 	var nearest: Junction = null
 	var nearest_distance: float = INF
 	var entry: TrafficCar = _car_routes.get(car.get_instance_id())
+	if entry != null:
+		entry.waiting_for_signal = false
 	if entry != null and entry.clearing != null:
 		var clearing: Junction = entry.clearing.get_ref() as Junction
 		# The stop-line envelope extends beyond the physical junction and must clear too.
@@ -164,6 +167,9 @@ func speed_limit(car: Node3D, forward: Vector3, front_extent: float, brake: floa
 		if distance < nearest_distance:
 			nearest_distance = distance
 			nearest = junction
+	if entry != null and nearest != null:
+		var north_south: bool = absf(ray.y) >= absf(ray.x)
+		entry.waiting_for_signal = nearest.phase != (Phase.NORTH_SOUTH if north_south else Phase.EAST_WEST)
 	if nearest == null or nearest_distance > REQUEST_DISTANCE + STOP_MARGIN:
 		_remove_requests(car, null)
 		return INF
@@ -209,11 +215,19 @@ func is_clearing(car: Node3D) -> bool:
 	var entry: TrafficCar = _car_routes.get(car.get_instance_id())
 	return entry != null and entry.clearing != null
 
+func is_waiting_for_signal(car: Node3D) -> bool:
+	var entry: TrafficCar = _car_routes.get(car.get_instance_id())
+	return entry != null and entry.waiting_for_signal
+
 func release(car: Node3D) -> void:
 	var entry: TrafficCar = _car_routes.get(car.get_instance_id())
 	if entry != null:
 		entry.clearing = null
+		entry.waiting_for_signal = false
+		entry.collidable = _car_collidable(entry)
 	for junction: Junction in _junctions:
+		if entry != null and not entry.collidable:
+			junction.occupants.erase(entry)
 		if junction.owner != null and junction.owner.get_ref() == car:
 			junction.owner = null
 		_remove_from_queue(junction, car)
@@ -221,6 +235,7 @@ func release(car: Node3D) -> void:
 func clear() -> void:
 	for entry: TrafficCar in _cars:
 		entry.clearing = null
+		entry.waiting_for_signal = false
 	for junction: Junction in _junctions:
 		junction.owner = null
 		junction.queue.clear()

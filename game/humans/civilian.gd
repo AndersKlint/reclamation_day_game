@@ -5,6 +5,7 @@ const DEPLETION_SCRIPT = preload("res://game/draining/depletion_effect.gd")
 const WorldModel = preload("res://game/world/world_model.gd")
 const Drainable = preload("res://game/draining/drainable.gd")
 const CivilianAudio = preload("res://game/humans/civilian_audio.gd")
+const RiggedCharacter = preload("res://game/characters/rigged_character.gd")
 
 const STARTLE_DISTANCE: float = 19.5
 const SAFE_DISTANCE: float = 37.5
@@ -24,6 +25,8 @@ var pedestrian_route: PackedVector3Array = PackedVector3Array()
 var route_cursor: int = 0
 var route_direction: int = 1
 var scream_pool: CivilianAudio
+var female_voice: bool = false
+var _rigged_character: RiggedCharacter
 var _clock: float = 0.0
 var _safe_time: float = 0.0
 var _path: PackedVector3Array = PackedVector3Array()
@@ -42,19 +45,26 @@ var _cached_player_radius: float = 0.0
 @onready var _drainable: Drainable = $Drainable
 @onready var _visibility: VisibleOnScreenNotifier3D = $Visibility
 
-func configure(balancer: CharacterBody3D, model: PackedScene) -> void:
+func configure(balancer: CharacterBody3D, model: PackedScene, character_path: String = "") -> void:
 	player = balancer
 	_drainable.pacifist_protected = true
-	var actor: Node3D = model.instantiate() as Node3D
-	_visual.add_child(actor)
-	actor.rotation.y = PI
-	_animation = actor.find_child("AnimationPlayer", true, false) as AnimationPlayer
-	assert(_animation != null, "Civilian model requires AnimationPlayer")
-	_animation.stop()
-	_animation.callback_mode_process = AnimationMixer.ANIMATION_CALLBACK_MODE_PROCESS_MANUAL
-	if not _model_bounds.has(model):
-		_model_bounds[model] = WorldModel.bounds(_visual, true)
-	var model_bounds: AABB = _model_bounds[model]
+	if character_path.is_empty():
+		var actor: Node3D = model.instantiate() as Node3D
+		_visual.add_child(actor)
+		actor.rotation.y = PI
+		_animation = actor.find_child("AnimationPlayer", true, false) as AnimationPlayer
+		assert(_animation != null, "Civilian model requires AnimationPlayer")
+		_animation.stop()
+		_animation.callback_mode_process = AnimationMixer.ANIMATION_CALLBACK_MODE_PROCESS_MANUAL
+	else:
+		female_voice = character_path.begins_with("Female/")
+		_rigged_character = RiggedCharacter.new()
+		_visual.add_child(_rigged_character)
+		_rigged_character.configure(character_path, character_path.get_file(), 1.8)
+	var bounds_key: Variant = model if character_path.is_empty() else character_path
+	if not _model_bounds.has(bounds_key):
+		_model_bounds[bounds_key] = WorldModel.bounds(_visual, true)
+	var model_bounds: AABB = _model_bounds[bounds_key]
 	_model_dimensions = model_bounds.size
 	var horizontal_radius: float = Vector2(
 		maxf(absf(model_bounds.position.x), absf(model_bounds.end.x)),
@@ -65,6 +75,18 @@ func configure(balancer: CharacterBody3D, model: PackedScene) -> void:
 		Vector3(horizontal_radius * 2.0, model_bounds.size.y, horizontal_radius * 2.0)
 	).grow(_model_dimensions.y * 0.25)
 	_drainable.configure_volume(_model_dimensions * global_basis.get_scale().abs())
+	if _animation != null:
+		_configure_animations(model)
+	_drainable.drained.connect(_on_drained)
+	_drainable.collapsed.connect(_on_collapsed)
+	active = true
+	_simulation_delta = randf_range(0.0, DISTANT_INTERVAL)
+	_scream_cooldown = randf_range(1.0, 4.0)
+	route_direction = -1 if randf() < 0.5 else 1
+	_last_position = global_position
+	_enter(State.IDLE)
+
+func _configure_animations(model: PackedScene) -> void:
 	if not _model_libraries.has(model):
 		var library: AnimationLibrary = _animation.get_animation_library("").duplicate() as AnimationLibrary
 		for clip: StringName in [&"Idle", &"Stroll", &"Flee", &"Cower"]:
@@ -74,14 +96,10 @@ func configure(balancer: CharacterBody3D, model: PackedScene) -> void:
 		_model_libraries[model] = library
 	_animation.remove_animation_library("")
 	_animation.add_animation_library("", _model_libraries[model])
-	_drainable.drained.connect(_on_drained)
-	_drainable.collapsed.connect(_on_collapsed)
-	active = true
-	_simulation_delta = randf_range(0.0, DISTANT_INTERVAL)
-	_scream_cooldown = randf_range(1.0, 4.0)
-	route_direction = -1 if randf() < 0.5 else 1
-	_last_position = global_position
-	_enter(State.IDLE)
+
+func _play_animation(clip: StringName, blend: float) -> void:
+	if _animation != null:
+		_animation.play(clip, blend)
 
 func configure_remains(remains_parent: Node3D, ground_position: Callable) -> void:
 	_remains_parent = remains_parent
@@ -105,21 +123,18 @@ func _enter(next: State) -> void:
 	match state:
 		State.IDLE:
 			_clock = randf_range(0.8, 2.2)
-			_animation.play(&"Idle", 0.15)
+			_play_animation(&"Idle", 0.15)
 		State.STROLL:
 			plan_due = true
-			_animation.play(&"Stroll", 0.15)
+			_play_animation(&"Stroll", 0.15)
 		State.STARTLED:
-			_clock = maxf(0.3, _animation.get_animation(&"Startle").length)
-			_animation.play(&"Startle", 0.1)
-			if _scream_cooldown <= 0.0 and is_instance_valid(scream_pool):
-				scream_pool.play_scream(self)
-				_scream_cooldown = 5.0
+			_clock = maxf(0.3, _animation.get_animation(&"Startle").length) if _animation != null else 0.6
+			_play_animation(&"Startle", 0.1)
 		State.FLEE:
 			_clock = 0.0
 			_safe_time = 0.0
 			plan_due = true
-			_animation.play(&"Cower", 0.15)
+			_play_animation(&"Cower", 0.15)
 
 func accept_path(path: PackedVector3Array) -> void:
 	plan_due = false
@@ -131,9 +146,9 @@ func accept_path(path: PackedVector3Array) -> void:
 		if state == State.STROLL:
 			_enter(State.IDLE)
 		else:
-			_animation.play(&"Cower", 0.15)
+			_play_animation(&"Cower", 0.15)
 	else:
-		_animation.play(&"Flee" if state == State.FLEE else &"Stroll", 0.15)
+		_play_animation(&"Flee" if state == State.FLEE else &"Stroll", 0.15)
 
 func _physics_process(delta: float) -> void:
 	if not active or is_queued_for_deletion() or not is_instance_valid(player):
@@ -167,6 +182,10 @@ func _physics_process(delta: float) -> void:
 				_enter(State.IDLE)
 			elif _clock <= 0.0 and (_waypoint >= _path.size() or _flat_distance(_path[-1], player.global_position) < distance + 3.0):
 				plan_due = true
+	if state in [State.STARTLED, State.FLEE] and distance < SAFE_DISTANCE + player_radius and _scream_cooldown <= 0.0 and is_instance_valid(scream_pool):
+		_scream_cooldown = randf_range(0.4, 1.0)
+		if scream_pool.play_scream(self, female_voice):
+			_scream_cooldown = 5.0
 	var horizontal: Vector3 = Vector3.ZERO
 	while _waypoint < _path.size() and _flat_distance(global_position, _path[_waypoint]) < 0.65:
 		_waypoint += 1
@@ -179,12 +198,11 @@ func _physics_process(delta: float) -> void:
 			_path.clear()
 			horizontal = Vector3.ZERO
 			_clock = 1.5
-			_animation.play(&"Cower" if state == State.FLEE else &"Idle", 0.15)
+			_play_animation(&"Cower" if state == State.FLEE else &"Idle", 0.15)
 	elif state == State.STROLL and not plan_due:
 		_enter(State.IDLE)
 	elif state == State.FLEE:
-		if _animation.current_animation != &"Cower":
-			_animation.play(&"Cower", 0.15)
+		_play_animation(&"Cower", 0.15)
 	_last_position = global_position
 	velocity.x = horizontal.x
 	velocity.z = horizontal.z
@@ -200,7 +218,10 @@ func _physics_process(delta: float) -> void:
 	if not horizontal.is_zero_approx():
 		_visual.rotation.y = lerp_angle(_visual.rotation.y, atan2(-horizontal.x, -horizontal.z), minf(1.0, delta * 8.0))
 	if _visibility.is_on_screen():
-		_animation.advance(delta)
+		if _rigged_character != null:
+			_rigged_character.update_pose(horizontal, false, false, delta)
+		elif _animation != null:
+			_animation.advance(delta)
 
 func _on_drained(_amount: float) -> void:
 	_safe_time = 0.0
@@ -208,6 +229,8 @@ func _on_drained(_amount: float) -> void:
 		_enter(State.STARTLED)
 
 func _on_collapsed() -> void:
+	if is_instance_valid(scream_pool):
+		scream_pool.play_death_grunt(self, female_voice)
 	if not _kill_rewarded and is_instance_valid(_drainable.collector) and _drainable.collector.has_method(&"heal_immediately"):
 		_kill_rewarded = true
 		_drainable.collector.call(&"heal_immediately", 1.0)
@@ -224,6 +247,8 @@ func _create_remains() -> void:
 		remains_parent.add_child(effect)
 		effect.global_transform = Transform3D(Basis.IDENTITY, global_position)
 		effect.style = DEPLETION_SCRIPT.Style.HUMANOID
+		effect.female_voice = female_voice
+		effect.play_death_voice = false
 		effect.configure_reward(_drainable.take_collapse_life(), _drainable.collector, _drainable.healing_per_life)
 		_visual.reparent(effect, true)
 		effect.configure(_visual, _model_dimensions, _ground_position)

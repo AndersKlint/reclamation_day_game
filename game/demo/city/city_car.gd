@@ -9,13 +9,14 @@ const PLAYER_LAYER: int = 2
 const HUMAN_LAYER: int = 4
 const CAR_LAYER: int = 16
 const OBSTACLE_MASK: int = WORLD_LAYER | PLAYER_LAYER | HUMAN_LAYER | CAR_LAYER
+const RECOVERY_IGNORE_MASK: int = CAR_LAYER | HUMAN_LAYER
 
 const CRUISE_SPEED: float = 7.0
 const THREAT_SPEED: float = 9.5
 const THREAT_ACCELERATION: float = 3.0
 const BRAKE: float = 18.0
 const ACCELERATION: float = 6.0
-const WAYPOINT_RADIUS: float = 1.6
+const WAYPOINT_RADIUS: float = 0.001
 const PROBE_HEIGHT: float = 0.7
 const PROBE_MARGIN: float = 0.1
 const STOP_MARGIN: float = 0.35
@@ -25,6 +26,9 @@ const NEAR_PROBE_INTERVAL: float = 0.05
 const DISTANT_PROBE_INTERVAL: float = 0.2
 const NEAR_PROBE_MARGIN: float = 80.0
 const PROBE_DIRECTION_DOT: float = 0.98
+const BLOCKAGE_SECONDS: float = 15.0
+const RECOVERY_SECONDS: float = 3.0
+const MIN_PROGRESS_SPEED: float = 0.1
 const CarAudioScript = preload("res://game/demo/city/car_audio.gd")
 
 enum Motion { PARKED, CRUISE, YIELD }
@@ -49,6 +53,9 @@ var _motion: Motion = Motion.PARKED
 var _car_audio: Node3D
 var _intersections: RefCounted
 var _intersection_registered: bool = false
+var _blockage_time: float = 0.0
+var _recovery_left: float = 0.0
+var _blocked_by_traffic: bool = false
 
 func configure_car(variant: int, route: PackedVector3Array = PackedVector3Array()) -> void:
 	if drainable != null:
@@ -76,6 +83,8 @@ func configure_intersections(coordinator: RefCounted) -> void:
 func set_active(enabled: bool) -> void:
 	_active_requested = enabled
 	var can_move: bool = enabled and not _is_depleted() and _route.size() >= 2
+	if not can_move:
+		_reset_traffic_recovery()
 	if is_instance_valid(_car_audio):
 		_car_audio.call(&"set_enabled", can_move)
 	if _is_depleted() or _route.size() < 2:
@@ -119,6 +128,7 @@ func _physics_process(delta: float) -> void:
 	if _route.size() < 2:
 		return
 	if _player != null and (not is_instance_valid(_player) or not bool(_player.get("gameplay_enabled"))):
+		_blockage_time = 0.0
 		if not is_instance_valid(_player):
 			_release_intersections()
 		_car_speed = 0.0
@@ -127,7 +137,15 @@ func _physics_process(delta: float) -> void:
 	_car_audio.call(&"set_enabled", true)
 	if not _route_started:
 		_start_route()
+	if _recovery_left > 0.0:
+		if _recovery_left <= delta:
+			_reset_traffic_recovery()
+		else:
+			_recovery_left -= delta
+	var previous_position: Vector3 = global_position
+	_blocked_by_traffic = false
 	_move_along_route(delta)
+	_update_traffic_blockage(delta, previous_position)
 	_sync_query_body()
 	_car_audio.call(&"update_speed", _car_speed, delta)
 
@@ -192,12 +210,14 @@ func _move_along_route(delta: float) -> void:
 	direction = direction.normalized()
 	var intersection_limit: float = INF
 	var clearing: bool = false
-	if _intersections != null:
+	if _intersections != null and _recovery_left <= 0.0:
 		var intersection_extent: float = Vector2(fitted_size.x, fitted_size.z).length() * 0.5
 		intersection_limit = float(_intersections.call(&"speed_limit", self, direction, intersection_extent, BRAKE))
 		_intersection_registered = true
 		clearing = bool(_intersections.call(&"is_clearing", self))
 	var desired: float = minf(_desired_speed(delta, direction, clearing), intersection_limit)
+	if not is_inf(intersection_limit) or (_intersections != null and bool(_intersections.call(&"is_waiting_for_signal", self))):
+		_blocked_by_traffic = false
 	var rate: float = BRAKE if desired < _car_speed else ACCELERATION
 	if desired > _car_speed and _is_player_threat(direction):
 		rate = THREAT_ACCELERATION
@@ -231,7 +251,9 @@ func _advance_waypoint() -> void:
 	var outgoing: Vector3 = next - current
 	outgoing.y = 0.0
 	if incoming.length() > 0.01 and outgoing.length() > 0.01:
-		if incoming.normalized().dot(outgoing.normalized()) < TURN_YIELD_DOT:
+		var alignment: float = incoming.normalized().dot(outgoing.normalized())
+		var entering_curve: bool = incoming.length() > fitted_size.z and outgoing.length() <= fitted_size.z and alignment < 0.999
+		if alignment < TURN_YIELD_DOT or entering_curve:
 			_yield_left = maxf(_yield_left, _yield_delay)
 			_motion = Motion.YIELD
 	_route_index = (_route_index + 1) % count
@@ -250,6 +272,14 @@ func _desired_speed(delta: float, forward: Vector3, clearing: bool) -> float:
 		var initial_clearance: float = (hit_position - _probe_origin).dot(forward) - _footprint_extent(forward) - STOP_MARGIN
 		clearance = minf(clearance, maxf(0.0, initial_clearance - global_position.distance_to(_probe_origin)))
 		var safe_speed: float = sqrt(2.0 * BRAKE * clearance)
+		var collider: CollisionObject3D = obstacle.get("collider") as CollisionObject3D
+		if collider != null and collider.collision_layer & HUMAN_LAYER != 0:
+			_blocked_by_traffic = safe_speed <= MIN_PROGRESS_SPEED
+		elif collider != null and collider.collision_layer & CAR_LAYER != 0 and collider.has_meta(&"city_car"):
+			var other: Node3D = collider.get_meta(&"city_car") as Node3D
+			if is_instance_valid(other) and other != self:
+				var route: PackedVector3Array = other.get(&"_route")
+				_blocked_by_traffic = route.size() >= 2 and not bool(other.call(&"_is_depleted")) and safe_speed <= MIN_PROGRESS_SPEED
 		_motion = Motion.YIELD if safe_speed < CRUISE_SPEED else Motion.CRUISE
 		return minf(CRUISE_SPEED, safe_speed)
 	_car_audio.call(&"clear_obstruction", delta)
@@ -281,7 +311,7 @@ func _is_player_threat(forward: Vector3) -> bool:
 
 func _sensed_obstacle(delta: float, forward: Vector3) -> Dictionary:
 	_probe_left -= delta
-	var refresh: bool = not _probe_initialized or _probe_left <= 0.0 or _probe_forward.dot(forward) < PROBE_DIRECTION_DOT
+	var refresh: bool = not _probe_initialized or _probe_left <= 0.0 or _probe_forward.dot(forward) < PROBE_DIRECTION_DOT or _is_obstacle_stale(_cached_obstacle)
 	if refresh:
 		var interval: float = NEAR_PROBE_INTERVAL if _is_near_player() else DISTANT_PROBE_INTERVAL
 		_cached_obstacle = _probe(forward)
@@ -289,9 +319,6 @@ func _sensed_obstacle(delta: float, forward: Vector3) -> Dictionary:
 		_probe_forward = forward
 		_probe_left = interval if _probe_initialized else interval * (0.5 + float(_priority % 97) / 194.0)
 		_probe_initialized = true
-	elif _is_obstacle_stale(_cached_obstacle):
-		# A cached hit can outlive its collider; its stale position must not keep the car braking.
-		_cached_obstacle = {}
 	return _cached_obstacle
 
 func _is_obstacle_stale(hit: Dictionary) -> bool:
@@ -300,6 +327,9 @@ func _is_obstacle_stale(hit: Dictionary) -> bool:
 	var collider: Variant = hit.get("collider")
 	if not is_instance_valid(collider) or not collider is Node:
 		return true
+	if collider is CollisionObject3D and _probe_query != null:
+		if (collider as CollisionObject3D).collision_layer & _probe_query.collision_mask == 0:
+			return true
 	return (collider as Node).is_queued_for_deletion()
 
 func _is_near_player() -> bool:
@@ -318,9 +348,9 @@ func _probe(forward: Vector3) -> Dictionary:
 		return {}
 	if _probe_query == null:
 		_probe_query = PhysicsRayQueryParameters3D.new()
-		_probe_query.collision_mask = OBSTACLE_MASK
 		_probe_query.collide_with_areas = true
 		_probe_query.exclude = [_query_body.get_rid()]
+	_probe_query.collision_mask = OBSTACLE_MASK & ~RECOVERY_IGNORE_MASK if _recovery_left > 0.0 else OBSTACLE_MASK
 	var space: PhysicsDirectSpaceState3D = get_world_3d().direct_space_state
 	var origin: Vector3 = global_position + Vector3.UP * PROBE_HEIGHT
 	var reach: float = clampf(_car_speed * 0.55, 3.0, 6.0) + 1.5
@@ -364,11 +394,42 @@ func _sync_query_body() -> void:
 		_query_body.global_transform = global_transform
 
 func _on_car_depleted() -> void:
+	_reset_traffic_recovery()
 	_release_intersections()
 	_car_speed = 0.0
 	_motion = Motion.PARKED
 	_car_audio.call(&"set_enabled", false)
 	set_physics_process(false)
+
+func _update_traffic_blockage(delta: float, previous_position: Vector3) -> void:
+	if _recovery_left > 0.0:
+		return
+	if not _blocked_by_traffic or _flat_distance(previous_position, global_position) > MIN_PROGRESS_SPEED * delta:
+		_blockage_time = 0.0
+		return
+	_blockage_time += delta
+	if _blockage_time < BLOCKAGE_SECONDS or not is_instance_valid(_query_body):
+		return
+	_blockage_time = 0.0
+	_recovery_left = RECOVERY_SECONDS
+	_query_body.collision_layer = 0
+	_release_intersections()
+	_yield_left = 0.0
+	_invalidate_obstacle_cache()
+
+func _reset_traffic_recovery() -> void:
+	if _recovery_left > 0.0 and is_instance_valid(_query_body):
+		_query_body.collision_layer = CAR_LAYER
+	_recovery_left = 0.0
+	_blockage_time = 0.0
+	_blocked_by_traffic = false
+	_invalidate_obstacle_cache()
+
+func _invalidate_obstacle_cache() -> void:
+	_cached_obstacle = {}
+	_probe_initialized = false
+	if _probe_query != null:
+		_probe_query.collision_mask = OBSTACLE_MASK & ~RECOVERY_IGNORE_MASK if _recovery_left > 0.0 else OBSTACLE_MASK
 
 func _release_intersections() -> void:
 	if _intersections != null and _intersection_registered:

@@ -7,6 +7,12 @@ const MODELS: Array[PackedScene] = [
 	preload("res://available-assets/random-packs/Cordatix_PSXBystanders_FreeSampler_v1.0/GLB/People/office_worker.glb"),
 	preload("res://available-assets/random-packs/Cordatix_PSXBystanders_FreeSampler_v1.0/GLB/People/young_man.glb"),
 ]
+const CHARACTERS: Array[String] = [
+	"Male/Character_02", "Male/Character_03", "Male/Character_04", "Male/Character_05",
+	"Male/Character_06", "Male/Character_07", "Male/Character_08", "Male/Character_09",
+	"Female/Character_Female_02", "Female/Character_Female_03", "Female/Character_Female_04",
+	"Female/Character_Female_05", "Female/Character_Female_06", "Female/Character_Female_07", "Female/Character_Female_08",
+]
 const INITIAL_DISTRICTS: Dictionary = {&"village": 12, &"city": 512, &"downtown": 512}
 const SPAWN_BATCH: int = 4
 const SPAWN_ATTEMPTS: int = 12
@@ -32,6 +38,7 @@ var _routes: Array[PackedVector3Array] = []
 var _people: Array[Civilian] = []
 var _cursor: int = 0
 var _model_cursor: int = 0
+var _model_bag: Array[int] = []
 var _budget_left: float = 0.0
 var _path_queries_left: int = 0
 var _clearance: CapsuleShape3D = CapsuleShape3D.new()
@@ -163,8 +170,19 @@ func _spawn_at(entry: Dictionary) -> void:
 	add_child(person)
 	person.global_position = point + Vector3.UP * 0.08
 	person.reset_physics_interpolation()
-	person.configure(_player, MODELS[_model_cursor % MODELS.size()])
-	_model_cursor += 1
+	if _model_bag.is_empty():
+		for index: int in MODELS.size() + CHARACTERS.size():
+			_model_bag.append(index)
+		_model_bag.shuffle()
+		if _model_bag.size() > 1 and _model_bag.back() == _model_cursor:
+			var swap: int = _model_bag[0]
+			_model_bag[0] = _model_bag[-1]
+			_model_bag[-1] = swap
+	_model_cursor = _model_bag.pop_back()
+	if _model_cursor < MODELS.size():
+		person.configure(_player, MODELS[_model_cursor])
+	else:
+		person.configure(_player, null, CHARACTERS[_model_cursor - MODELS.size()])
 	_people.append(person)
 	var cell: Vector2i = _spawn_cell(point)
 	if not _spawn_cells.has(cell):

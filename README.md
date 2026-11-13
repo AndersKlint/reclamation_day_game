@@ -2,7 +2,7 @@
 
 A dark 3D solo demo about the Balancer, a melancholy spirit that appears at Earth's environmental tipping point. Drain the life around it, grow from a shadow into an overwhelming presence, survive human resistance, and return the accumulated life as new growth.
 
-The current demo begins inside an enclosed wheatfield. Gather wheat life; a farmer arrives after 30 seconds of active play. Escape by reaching HUD SIZE 2.00×, draining a perimeter fence, and walking through the gap; the farmer can remain alive. Alternatively, break his endurance and stay close until he is fully consumed; only this opens the northern gate. Either route continues the same run north through an orchard/farm approach, a village, and a city with towers, parks, police, tanks, parked cars, and traffic. Beyond the farm, local resistance rather than further gates supplies danger. Play is mouse-orbit third person with automatic draining. Full UI, menu, and audio polish is later.
+The current demo begins inside an enclosed wheatfield. Gather wheat life; a farmer arrives after 30 seconds of active play. Escape by reaching HUD SIZE 2.00×, draining a perimeter fence, and walking through the gap; the farmer can remain alive. Alternatively, break his endurance and stay close until he is fully consumed; only this opens the northern gate. Either route continues the same run north through an orchard/farm approach, a village, and a city with towers, parks, police, tanks, and traffic. Beyond the farm, local resistance rather than further gates supplies danger. Play is mouse-orbit third person with automatic draining. Full UI, menu, and audio polish is later.
 
 ## Play
 

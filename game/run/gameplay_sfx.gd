@@ -28,12 +28,28 @@ const DEFAULT_FILTER_CUTOFF_HZ: float = 5000.0
 const DEFAULT_FILTER_DB: float = -24.0
 
 var _voices: Array[AudioStreamPlayer3D] = []
+var _wheat_voices: Array[AudioStreamPlayer3D] = []
+var _wheat_reserved: Array[bool] = []
+var _wheat_samples: Array[AudioStream] = []
 var _building_voices: Array[AudioStreamPlayer3D] = []
 var _player: Node3D
 var _last_rubble_sound_msec: int = -RUBBLE_SOUND_INTERVAL_MSEC
 
 func _ready() -> void:
 	_player = _player_node()
+	for index: int in range(1, 10):
+		_wheat_samples.append(load("res://game/run/audio/wheat_crunch_%d.wav" % index) as AudioStream)
+	for index: int in 6:
+		var voice: AudioStreamPlayer3D = AudioStreamPlayer3D.new()
+		voice.bus = &"SFX"
+		voice.volume_db = -12.0
+		# Player-distance gain avoids double attenuation from the zoomed-out camera.
+		voice.attenuation_model = AudioStreamPlayer3D.ATTENUATION_DISABLED
+		voice.max_distance = 0.0
+		voice.max_polyphony = 1
+		add_child(voice)
+		_wheat_voices.append(voice)
+		_wheat_reserved.append(false)
 	for index: int in VOICES:
 		var voice: AudioStreamPlayer3D = AudioStreamPlayer3D.new()
 		add_child(voice)
@@ -45,12 +61,13 @@ func _ready() -> void:
 		add_child(building_voice)
 		_building_voices.append(building_voice)
 
-func play_depletion(style: int, location: Vector3, female: bool, building_collapse: bool = false, size: Vector3 = Vector3.ZERO) -> void:
+func play_depletion(style: int, location: Vector3, female: bool, building_collapse: bool = false, size: Vector3 = Vector3.ZERO, play_voice: bool = true) -> void:
 	match style:
 		0:
 			_play_important(WOOD, location, -12.0, WOOD_UNIT_SIZE, WOOD_RANGE)
 		1:
-			_play_important(FEMALE if female else MALE, location, -10.0, HUMAN_UNIT_SIZE, HUMAN_RANGE)
+			if play_voice:
+				_play_important(FEMALE if female else MALE, location, -10.0, HUMAN_UNIT_SIZE, HUMAN_RANGE)
 			_play_important(FLESH, location, -18.0, FLESH_UNIT_SIZE, FLESH_RANGE)
 		2:
 			if building_collapse:
@@ -59,6 +76,30 @@ func play_depletion(style: int, location: Vector3, female: bool, building_collap
 				_play_important(RUBBLE, location, -7.0, RUBBLE_UNIT_SIZE, RUBBLE_RANGE)
 		_:
 			pass
+
+func play_wheat_crunch(location: Vector3) -> void:
+	if location.distance_squared_to(_player_position()) > 60.0 * 60.0:
+		return
+	for index: int in _wheat_voices.size():
+		if _wheat_reserved[index] or _wheat_voices[index].playing:
+			continue
+		_wheat_reserved[index] = true
+		_wheat_voices[index].global_position = location
+		_wheat_voices[index].stream = _wheat_samples.pick_random()
+		var delay: Tween = create_tween()
+		delay.set_pause_mode(Tween.TWEEN_PAUSE_STOP)
+		delay.tween_interval(randf_range(0.0, 0.2))
+		delay.tween_callback(_start_wheat_crunch.bind(index))
+		return
+
+func _start_wheat_crunch(index: int) -> void:
+	_wheat_reserved[index] = false
+	var distance: float = _wheat_voices[index].global_position.distance_to(_player_position())
+	var gain: float = clampf(1.0 - distance / 60.0, 0.0, 1.0)
+	if gain <= 0.0:
+		return
+	_wheat_voices[index].volume_db = -12.0 + linear_to_db(gain)
+	_wheat_voices[index].play()
 
 func play_rubble_absorb(size: Vector3) -> void:
 	var now: int = Time.get_ticks_msec()

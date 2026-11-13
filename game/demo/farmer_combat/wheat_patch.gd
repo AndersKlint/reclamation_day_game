@@ -273,6 +273,13 @@ func _on_cell_collapsed(cell: CropCell) -> void:
 	if cell.harvested:
 		return
 	cell.harvested = true
+	var ancestor: Node = self
+	while ancestor != null:
+		var sfx: Node = ancestor.get_node_or_null("GameplaySfx")
+		if sfx != null and sfx.has_method(&"play_wheat_crunch"):
+			sfx.call(&"play_wheat_crunch", cell.drainable.global_position)
+			break
+		ancestor = ancestor.get_parent()
 	_dirty_visuals.erase(cell)
 	if _dirty_visuals.is_empty():
 		_visual_elapsed = 0.0

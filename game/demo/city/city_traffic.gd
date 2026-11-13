@@ -8,11 +8,8 @@ const TrafficIntersections = preload("res://game/demo/city/traffic_intersections
 const MOVING_CAR_COUNT: int = 64
 const MAX_TRAFFIC_ROUTES: int = 4
 const START_CLEARANCE: float = 9.0
-const STAGING_POLICE_COUNT: int = 3
-const TAXI_COUNT: int = 6
 const ACTOR_METHODS: Array[StringName] = [&"configure_car", &"configure_traffic", &"configure_intersections", &"set_active"]
 const REGION_METHODS: Array[StringName] = [
-	&"get_city_parking",
 	&"get_traffic_routes",
 	&"ground_position",
 	&"get_zone_at",
@@ -21,7 +18,6 @@ const REGION_METHODS: Array[StringName] = [
 
 var _region: Node3D
 var _player: CharacterBody3D
-var _parked: Array[Node3D] = []
 var _moving: Array[Node3D] = []
 var _configured: bool = false
 var _active: bool = false
@@ -47,7 +43,6 @@ func configure(region: Node3D, player: CharacterBody3D) -> void:
 	_intersections = TrafficIntersections.new()
 	_intersections.configure(_region)
 	_configured = true
-	_spawn_parked()
 	_spawn_moving()
 
 func start() -> void:
@@ -67,75 +62,9 @@ func stop() -> void:
 	_intersections.clear()
 
 func _set_active(enabled: bool) -> void:
-	for car: Node3D in _parked:
-		if is_instance_valid(car):
-			car.call(&"set_active", enabled)
 	for car: Node3D in _moving:
 		if is_instance_valid(car):
 			car.call(&"set_active", enabled)
-
-func _spawn_parked() -> void:
-	var raw: Array = _region.call(&"get_city_parking")
-	var parking: Array[Transform3D] = []
-	parking.assign(raw)
-	if parking.is_empty():
-		push_error("CityTraffic found no city parking transforms")
-		return
-	var variants: Array[int] = _parked_variants(parking)
-	for i: int in parking.size():
-		var car: Node3D = _add_car(variants[i], parking[i], PackedVector3Array())
-		if car != null:
-			_parked.append(car)
-	if _parked.size() != parking.size():
-		push_warning("CityTraffic placed %d of %d parked cars" % [_parked.size(), parking.size()])
-
-func _parked_variants(parking: Array[Transform3D]) -> Array[int]:
-	var variants: Array[int] = []
-	variants.resize(parking.size())
-	variants.fill(-1)
-	var used: Dictionary = {}
-	# Keep police around the staging block and downtown instead of scattering them.
-	var police_targets: Array[Vector2] = []
-	for i: int in STAGING_POLICE_COUNT:
-		police_targets.append(CityLayout.block_center(2, 1))
-	police_targets.append(CityLayout.block_center(2, 2))
-	for target: Vector2 in police_targets:
-		if used.size() >= parking.size():
-			break
-		var index: int = _nearest_parking(parking, target, used)
-		if index < 0:
-			continue
-		variants[index] = CarAssets.POLICE
-		used[index] = true
-	var remaining: Array[int] = []
-	for i: int in parking.size():
-		if variants[i] < 0:
-			remaining.append(i)
-	var taxi_total: int = mini(TAXI_COUNT, remaining.size())
-	for i: int in taxi_total:
-		var pick: int = int(floor(float(i) * float(remaining.size()) / float(taxi_total)))
-		variants[remaining[pick]] = CarAssets.TAXI
-	var civilian: int = 0
-	for i: int in parking.size():
-		if variants[i] >= 0:
-			continue
-		variants[i] = civilian % CarAssets.CIVILIAN_COUNT
-		civilian += 1
-	return variants
-
-func _nearest_parking(parking: Array[Transform3D], target: Vector2, used: Dictionary) -> int:
-	var best: int = -1
-	var best_distance: float = INF
-	for i: int in parking.size():
-		if used.has(i):
-			continue
-		var local: Vector3 = _region.to_local(parking[i].origin)
-		var offset: Vector2 = Vector2(local.x, local.z) - target
-		var distance: float = offset.length_squared()
-		if distance < best_distance:
-			best_distance = distance
-			best = i
-	return best
 
 func _spawn_moving() -> void:
 	var raw: Array = _region.call(&"get_traffic_routes")

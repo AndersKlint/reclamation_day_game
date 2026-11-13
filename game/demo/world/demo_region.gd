@@ -64,7 +64,6 @@ var _city_pedestrian_points: Array[Vector3] = []
 var _pedestrian_points: Array[Vector3] = []
 var _traffic_routes: Array[PackedVector3Array] = []
 var _tank_routes: Array[PackedVector3Array] = []
-var _city_parking: Array[Transform3D] = []
 var _opening_encounter: Node3D
 var _terrain_heights: PackedFloat64Array = PackedFloat64Array()
 
@@ -124,9 +123,6 @@ func get_tank_routes() -> Array[PackedVector3Array]:
 	for route: PackedVector3Array in _tank_routes:
 		routes.append(route.duplicate())
 	return routes
-
-func get_city_parking() -> Array[Transform3D]:
-	return _city_parking.duplicate()
 
 func get_player_spawn() -> Vector3:
 	return to_global(Vector3(FARM_CENTER.x, ground_height(FARM_CENTER.x, FARM_CENTER.y), FARM_CENTER.y))
@@ -295,21 +291,12 @@ func _build_city() -> void:
 		_traffic_routes.append(_route_world(route))
 	for route: PackedVector3Array in _city_layout["tank_routes"]:
 		_tank_routes.append(_route_world(route))
-	for entry: Dictionary in _city_layout["parking"]:
-		var parking_position: Vector2 = entry["position"]
-		_city_parking.append(_parking_world(parking_position, float(entry["yaw"])))
-	for z: float in [72.0, 98.0, 124.0, 150.0]:
-		_city_parking.append(_parking_world(Vector2(_lane_x(z) + 4.2, z), 0.0))
 
 func _route_world(route: PackedVector3Array) -> PackedVector3Array:
 	var points: PackedVector3Array = PackedVector3Array()
 	for point: Vector3 in route:
 		points.append(ground_position(to_global(Vector3(point.x, 0.0, point.z))))
 	return points
-
-func _parking_world(p: Vector2, yaw: float) -> Transform3D:
-	var origin: Vector3 = to_global(Vector3(p.x, ground_height(p.x, p.y) + 0.065, p.y))
-	return Transform3D(global_basis * Basis(Vector3.UP, yaw), origin)
 
 func _ribbon(points: Array[Vector2], half_width: float, material: Material, label: String) -> void:
 	var surface: SurfaceTool = SurfaceTool.new()

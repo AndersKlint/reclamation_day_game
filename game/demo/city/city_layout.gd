@@ -5,6 +5,8 @@ const Assets = preload("res://game/demo/city/city_assets.gd")
 const X_STREETS: Array[float] = [-192.0, -96.0, 0.0, 96.0, 192.0]
 const Z_STREETS: Array[float] = [-220.0, -340.0, -460.0, -580.0, -700.0]
 const ROAD_HALF: float = 6.0
+const LANE_OFFSET: float = ROAD_HALF * 0.5
+const TURN_SEGMENTS: int = 9
 const WALK_WIDTH: float = 4.0
 const BUILDING_INSET: float = 12.5
 const MAX_FOOTPRINT: float = 34.0
@@ -47,7 +49,6 @@ static func build() -> Dictionary:
 		"pedestrian_points": _pedestrian_points(),
 		"pedestrian_routes": pedestrian_routes(),
 		"spawn_points": _spawn_points(),
-		"parking": _parking(),
 		"traffic_routes": _traffic_routes(),
 		"tank_routes": _tank_routes(),
 	}
@@ -363,37 +364,12 @@ static func _spawn_points() -> Array[Vector2]:
 		Vector2(-48.0, -300.0), Vector2(130.0, -610.0), Vector2(-70.0, -520.0), Vector2(20.0, -390.0),
 	]
 
-static func _parking() -> Array[Dictionary]:
-	var out: Array[Dictionary] = []
-	var vertical_intervals: Array[Vector2] = [
-		Vector2(-220.0, -340.0), Vector2(-340.0, -460.0),
-		Vector2(-460.0, -580.0), Vector2(-580.0, -700.0),
-	]
-	for street_index: int in X_STREETS.size():
-		var x: float = X_STREETS[street_index]
-		for interval_index: int in vertical_intervals.size():
-			var interval: Vector2 = vertical_intervals[interval_index]
-			var side: float = -1.0 if (street_index + interval_index) % 2 == 0 else 1.0
-			out.append({"position": Vector2(x + side * 4.7, (interval.x + interval.y) * 0.5), "yaw": 0.0 if side > 0.0 else PI})
-	var cross_intervals: Array[Vector2] = [
-		Vector2(-192.0, -96.0), Vector2(-96.0, 0.0), Vector2(0.0, 96.0), Vector2(96.0, 192.0),
-	]
-	for street_index: int in Z_STREETS.size():
-		var z: float = Z_STREETS[street_index]
-		for interval_index: int in cross_intervals.size():
-			var interval: Vector2 = cross_intervals[interval_index]
-			var side: float = -1.0 if (street_index + interval_index) % 2 == 0 else 1.0
-			out.append({"position": Vector2((interval.x + interval.y) * 0.5, z + side * 4.7), "yaw": PI * 0.5 if side > 0.0 else -PI * 0.5})
-	for extra: Vector2 in [Vector2(-187.3, -515.0), Vector2(196.7, -515.0), Vector2(-187.3, -625.0), Vector2(196.7, -625.0)]:
-		out.append({"position": extra, "yaw": 0.0})
-	return out
-
 static func _traffic_routes() -> Array[PackedVector3Array]:
 	return [
-		_loop(-192.0, 192.0, -700.0, -220.0, 1.8),
-		_loop(-96.0, 96.0, -580.0, -340.0, 1.8),
-		_loop(-96.0, 96.0, -700.0, -460.0, 1.8),
-		_loop(-192.0, 0.0, -460.0, -220.0, 1.8),
+		_lane_loop(-192.0, 192.0, -700.0, -220.0),
+		_lane_loop(-96.0, 96.0, -580.0, -340.0),
+		_lane_loop(-96.0, 96.0, -700.0, -460.0),
+		_lane_loop(-192.0, 0.0, -460.0, -220.0),
 	]
 
 static func _tank_routes() -> Array[PackedVector3Array]:
@@ -403,6 +379,23 @@ static func _tank_routes() -> Array[PackedVector3Array]:
 		_loop(-96.0, 192.0, -700.0, -460.0, 1.8),
 		_loop(-96.0, 96.0, -580.0, -340.0, 1.8),
 	]
+
+static func _lane_loop(x0: float, x1: float, z0: float, z1: float) -> PackedVector3Array:
+	var points: PackedVector3Array = PackedVector3Array()
+	var radius: float = ROAD_HALF + LANE_OFFSET
+	var centers: Array[Vector2] = [
+		Vector2(x0 + ROAD_HALF, z1 - ROAD_HALF),
+		Vector2(x1 - ROAD_HALF, z1 - ROAD_HALF),
+		Vector2(x1 - ROAD_HALF, z0 + ROAD_HALF),
+		Vector2(x0 + ROAD_HALF, z0 + ROAD_HALF),
+	]
+	var entry_directions: Array[Vector2] = [Vector2.LEFT, Vector2.DOWN, Vector2.RIGHT, Vector2.UP]
+	for corner: int in centers.size():
+		for step: int in TURN_SEGMENTS + 1:
+			var angle: float = -PI * 0.5 * float(step) / float(TURN_SEGMENTS)
+			var point: Vector2 = centers[corner] + entry_directions[corner].rotated(angle) * radius
+			points.append(Vector3(point.x, 0.0, point.y))
+	return points
 
 static func _loop(x0: float, x1: float, z0: float, z1: float, offset: float) -> PackedVector3Array:
 	var points: PackedVector3Array = PackedVector3Array()
