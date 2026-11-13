@@ -23,6 +23,7 @@ var _menu_scroll: ScrollContainer
 var _showing_upgrades: bool = false
 var _debug_upgrades: bool = false
 var _upgrade_timers: HBoxContainer
+var _upgrade_timer_lines: PackedStringArray = []
 
 
 func update_upgrade_timers(lines: PackedStringArray) -> void:
@@ -30,6 +31,7 @@ func update_upgrade_timers(lines: PackedStringArray) -> void:
 		var extra: Node = _upgrade_timers.get_child(-1)
 		_upgrade_timers.remove_child(extra)
 		extra.queue_free()
+	_upgrade_timer_lines.resize(lines.size())
 	for index: int in lines.size():
 		if index >= _upgrade_timers.get_child_count():
 			var tile := Label.new()
@@ -37,6 +39,9 @@ func update_upgrade_timers(lines: PackedStringArray) -> void:
 			tile.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 			tile.add_theme_font_size_override("font_size", 14)
 			_upgrade_timers.add_child(tile)
+		if _upgrade_timer_lines[index] == lines[index]:
+			continue
+		_upgrade_timer_lines[index] = lines[index]
 		var label := _upgrade_timers.get_child(index) as Label
 		var parts: PackedStringArray = lines[index].split(" · ", true, 1)
 		var symbol: String = "✦"
@@ -139,17 +144,22 @@ func update_growth(life: float, size: float, next_threshold: float) -> void:
 	_growth_debug.text = "(next upgrade at: %s · size: %.2f×)" % ["—" if is_inf(next_threshold) else _format_amount(next_threshold), size]
 
 
-func update_phase(ready: bool, remaining: float, duration: float, travelling: bool) -> void:
+func update_phase(ready: bool, remaining: float, duration: float, travelling: bool, refresh_text: bool) -> void:
 	_phase_label.show()
 	_phase_bar.show()
 	if ready:
-		_phase_label.text = "Phase  Ready"
+		if refresh_text and _phase_label.text != "Phase  Ready":
+			_phase_label.text = "Phase  Ready"
 		_phase_bar.value = 1.0
 	elif travelling:
-		_phase_label.text = "Phase"
+		if refresh_text and _phase_label.text != "Phase":
+			_phase_label.text = "Phase"
 		_phase_bar.value = 0.0
 	else:
-		_phase_label.text = "Phase  %.1fs" % maxf(remaining, 0.0)
+		if refresh_text:
+			var text: String = "Phase  %.1fs" % maxf(remaining, 0.0)
+			if _phase_label.text != text:
+				_phase_label.text = text
 		_phase_bar.value = 1.0 - clampf(remaining / duration, 0.0, 1.0) if duration > 0.0 else 0.0
 
 

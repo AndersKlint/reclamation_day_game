@@ -21,7 +21,8 @@ const PROBE_MARGIN: float = 0.1
 const STOP_MARGIN: float = 0.35
 const THREAT_RADIUS: float = 10.0
 const TURN_YIELD_DOT: float = 0.94
-const DISTANT_PROBE_INTERVAL: float = 0.1
+const NEAR_PROBE_INTERVAL: float = 0.05
+const DISTANT_PROBE_INTERVAL: float = 0.2
 const NEAR_PROBE_MARGIN: float = 80.0
 const PROBE_DIRECTION_DOT: float = 0.98
 const CarAudioScript = preload("res://game/demo/city/car_audio.gd")
@@ -46,6 +47,8 @@ var _probe_initialized: bool = false
 var _player: CharacterBody3D
 var _motion: Motion = Motion.PARKED
 var _car_audio: Node3D
+var _intersections: RefCounted
+var _intersection_registered: bool = false
 
 func configure_car(variant: int, route: PackedVector3Array = PackedVector3Array()) -> void:
 	if drainable != null:
@@ -66,21 +69,30 @@ func configure_car(variant: int, route: PackedVector3Array = PackedVector3Array(
 func configure_traffic(player: CharacterBody3D) -> void:
 	_player = player
 
+func configure_intersections(coordinator: RefCounted) -> void:
+	_release_intersections()
+	_intersections = coordinator
+
 func set_active(enabled: bool) -> void:
 	_active_requested = enabled
 	var can_move: bool = enabled and not _is_depleted() and _route.size() >= 2
 	if is_instance_valid(_car_audio):
 		_car_audio.call(&"set_enabled", can_move)
 	if _is_depleted() or _route.size() < 2:
+		_release_intersections()
 		_car_speed = 0.0
 		_motion = Motion.PARKED
 		set_physics_process(false)
 		return
 	_motion = Motion.CRUISE if enabled else Motion.PARKED
 	if not enabled:
+		_release_intersections()
 		_car_speed = 0.0
 		_probe_initialized = false
 	set_physics_process(enabled)
+
+func _exit_tree() -> void:
+	_release_intersections()
 
 func _ready() -> void:
 	if drainable == null:
@@ -107,6 +119,8 @@ func _physics_process(delta: float) -> void:
 	if _route.size() < 2:
 		return
 	if _player != null and (not is_instance_valid(_player) or not bool(_player.get("gameplay_enabled"))):
+		if not is_instance_valid(_player):
+			_release_intersections()
 		_car_speed = 0.0
 		_car_audio.call(&"set_enabled", false)
 		return
@@ -176,7 +190,14 @@ func _move_along_route(delta: float) -> void:
 	var direction: Vector3 = offset / distance if distance > 0.001 else -global_basis.z
 	direction.y = 0.0
 	direction = direction.normalized()
-	var desired: float = _desired_speed(delta, direction)
+	var intersection_limit: float = INF
+	var clearing: bool = false
+	if _intersections != null:
+		var intersection_extent: float = Vector2(fitted_size.x, fitted_size.z).length() * 0.5
+		intersection_limit = float(_intersections.call(&"speed_limit", self, direction, intersection_extent, BRAKE))
+		_intersection_registered = true
+		clearing = bool(_intersections.call(&"is_clearing", self))
+	var desired: float = minf(_desired_speed(delta, direction, clearing), intersection_limit)
 	var rate: float = BRAKE if desired < _car_speed else ACCELERATION
 	if desired > _car_speed and _is_player_threat(direction):
 		rate = THREAT_ACCELERATION
@@ -187,6 +208,11 @@ func _move_along_route(delta: float) -> void:
 	if distance <= 0.001:
 		return
 	var travel: float = minf(_car_speed * delta, distance)
+	if not is_inf(intersection_limit):
+		var stop_clearance: float = intersection_limit * intersection_limit / (2.0 * BRAKE)
+		if travel >= stop_clearance:
+			travel = stop_clearance
+			_car_speed = 0.0
 	var next_position: Vector3 = global_position + direction * travel
 	next_position.y = lerpf(global_position.y, target.y, clampf(travel / distance, 0.0, 1.0))
 	if ground_position.is_valid():
@@ -210,8 +236,8 @@ func _advance_waypoint() -> void:
 			_motion = Motion.YIELD
 	_route_index = (_route_index + 1) % count
 
-func _desired_speed(delta: float, forward: Vector3) -> float:
-	_yield_left = maxf(0.0, _yield_left - delta)
+func _desired_speed(delta: float, forward: Vector3, clearing: bool) -> float:
+	_yield_left = 0.0 if clearing else maxf(0.0, _yield_left - delta)
 	var obstacle: Dictionary = _sensed_obstacle(delta, forward)
 	if not obstacle.is_empty():
 		_note_obstacle(obstacle)
@@ -255,15 +281,12 @@ func _is_player_threat(forward: Vector3) -> bool:
 
 func _sensed_obstacle(delta: float, forward: Vector3) -> Dictionary:
 	_probe_left -= delta
-	var near_player: bool = _is_near_player()
-	if near_player or not _probe_initialized or _probe_left <= 0.0 or _probe_forward.dot(forward) < PROBE_DIRECTION_DOT:
+	if not _probe_initialized or _probe_left <= 0.0 or _probe_forward.dot(forward) < PROBE_DIRECTION_DOT:
+		var interval: float = NEAR_PROBE_INTERVAL if _is_near_player() else DISTANT_PROBE_INTERVAL
 		_cached_obstacle = _probe(forward)
 		_probe_origin = global_position
 		_probe_forward = forward
-		if near_player or not _probe_initialized:
-			_probe_left = DISTANT_PROBE_INTERVAL * float(_priority % 97) / 97.0
-		else:
-			_probe_left = DISTANT_PROBE_INTERVAL
+		_probe_left = interval if _probe_initialized else interval * (0.5 + float(_priority % 97) / 194.0)
 		_probe_initialized = true
 	return _cached_obstacle
 
@@ -298,7 +321,8 @@ func _probe(forward: Vector3) -> Dictionary:
 	var half_width: float = _footprint_extent(lateral) + PROBE_MARGIN
 	var nearest: Dictionary = {}
 	var nearest_distance: float = INF
-	for side: float in [-half_width, -half_width * 0.5, 0.0, half_width * 0.5, half_width]:
+	for i: int in 5:
+		var side: float = half_width * (float(i) * 0.5 - 1.0)
 		var from: Vector3 = origin + lateral * side
 		_probe_query.from = from
 		_probe_query.to = from + forward * reach
@@ -328,10 +352,16 @@ func _sync_query_body() -> void:
 		_query_body.global_transform = global_transform
 
 func _on_car_depleted() -> void:
+	_release_intersections()
 	_car_speed = 0.0
 	_motion = Motion.PARKED
 	_car_audio.call(&"set_enabled", false)
 	set_physics_process(false)
+
+func _release_intersections() -> void:
+	if _intersections != null and _intersection_registered:
+		_intersections.call(&"release", self)
+		_intersection_registered = false
 
 func _clear_collision() -> void:
 	super()

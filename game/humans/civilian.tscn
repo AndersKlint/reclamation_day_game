@@ -20,6 +20,8 @@ shape = SubResource("body")
 
 [node name="Visual" type="Node3D" parent="."]
 
+[node name="Visibility" type="VisibleOnScreenNotifier3D" parent="."]
+
 [node name="Drainable" parent="." instance=ExtResource("2")]
 emission_offset = Vector3(0, 1, 0)
 script = ExtResource("3")

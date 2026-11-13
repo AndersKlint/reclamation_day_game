@@ -3,13 +3,14 @@ extends Node3D
 const CityCar = preload("res://game/demo/city/city_car.gd")
 const CarAssets = preload("res://game/demo/city/car_assets.gd")
 const CityLayout = preload("res://game/demo/city/city_layout.gd")
+const TrafficIntersections = preload("res://game/demo/city/traffic_intersections.gd")
 
 const MOVING_CAR_COUNT: int = 64
 const MAX_TRAFFIC_ROUTES: int = 4
 const START_CLEARANCE: float = 9.0
 const STAGING_POLICE_COUNT: int = 3
 const TAXI_COUNT: int = 6
-const ACTOR_METHODS: Array[StringName] = [&"configure_car", &"configure_traffic", &"set_active"]
+const ACTOR_METHODS: Array[StringName] = [&"configure_car", &"configure_traffic", &"configure_intersections", &"set_active"]
 const REGION_METHODS: Array[StringName] = [
 	&"get_city_parking",
 	&"get_traffic_routes",
@@ -24,6 +25,11 @@ var _parked: Array[Node3D] = []
 var _moving: Array[Node3D] = []
 var _configured: bool = false
 var _active: bool = false
+var _intersections: RefCounted
+
+func _physics_process(delta: float) -> void:
+	if _active and is_instance_valid(_player) and bool(_player.get(&"gameplay_enabled")):
+		_intersections.tick(delta)
 
 func configure(region: Node3D, player: CharacterBody3D) -> void:
 	if _configured:
@@ -38,6 +44,8 @@ func configure(region: Node3D, player: CharacterBody3D) -> void:
 		return
 	_region = region
 	_player = player
+	_intersections = TrafficIntersections.new()
+	_intersections.configure(_region)
 	_configured = true
 	_spawn_parked()
 	_spawn_moving()
@@ -56,6 +64,7 @@ func stop() -> void:
 		return
 	_active = false
 	_set_active(false)
+	_intersections.clear()
 
 func _set_active(enabled: bool) -> void:
 	for car: Node3D in _parked:
@@ -166,6 +175,8 @@ func _spawn_moving() -> void:
 			continue
 		starts.append(placement.origin)
 		car.call(&"configure_traffic", _player)
+		car.call(&"configure_intersections", _intersections)
+		_intersections.register(car, route)
 		car.call(&"set_active", false)
 		_moving.append(car)
 	if _moving.size() != MOVING_CAR_COUNT:
@@ -193,6 +204,17 @@ func _route_placement(route: PackedVector3Array, distance: float) -> Transform3D
 	return Transform3D(Basis.IDENTITY, route[0])
 
 func _start_is_clear(point: Vector3, starts: PackedVector3Array) -> bool:
+	var inverse: Basis = _region.global_transform.basis.inverse()
+	var radius: float = Vector2(CityCar.FIT_BOUNDS.x, CityCar.FIT_BOUNDS.z).length() * 0.5 * sqrt(2.0) + 0.95
+	var extent: Vector2 = Vector2(
+		Vector3(inverse.x.x, inverse.y.x, inverse.z.x).length(),
+		Vector3(inverse.x.z, inverse.y.z, inverse.z.z).length()
+	) * radius + Vector2.ONE * CityLayout.ROAD_HALF
+	var local: Vector3 = _region.to_local(point)
+	for x: float in CityLayout.X_STREETS:
+		for z: float in CityLayout.Z_STREETS:
+			if absf(local.x - x) <= extent.x and absf(local.z - z) <= extent.y:
+				return false
 	for existing: Vector3 in starts:
 		if Vector2(point.x - existing.x, point.z - existing.z).length_squared() < START_CLEARANCE * START_CLEARANCE:
 			return false

@@ -6,6 +6,8 @@ const GameplaySfx = preload("res://game/run/gameplay_sfx.gd")
 const HitFeedback = preload("res://game/ui/hit_feedback.gd")
 const PhaseController = preload("res://game/balancer/phase_controller.gd")
 const VoidwalkerPresentation = preload("res://game/balancer/voidwalker_presentation.gd")
+const ShockwaveController = preload("res://game/balancer/shockwave_controller.gd")
+const HUD_REFRESH_INTERVAL: float = 0.1
 
 enum State { RUNNING, PAUSED, DEBUG_UPGRADES, CHOOSING, FAILED, REBIRTH, FINISHED }
 
@@ -30,6 +32,12 @@ var _previous_health: float = 0.0
 var _hit_feedback: HitFeedback
 var _voidwalker_presentation: VoidwalkerPresentation
 var _upgrade_delay_remaining: float = 0.0
+var _hud_refresh_remaining: float = 0.0
+var _phase_state: int = -1
+var _void_active: bool = false
+var _last_stand_status: int = -1
+var _shockwave_statuses: Array[int] = []
+var _shockwave_remaining: Array[float] = []
 
 @onready var balancer: CharacterBody3D = $Balancer
 @onready var human_director: Node3D = $HumanDirector
@@ -106,8 +114,14 @@ func _configure_voidwalker_presentation() -> void:
 
 func _process(delta: float) -> void:
 	if state == State.RUNNING and not get_tree().paused:
-		_refresh_phase()
-		_refresh_upgrade_timers()
+		_hud_refresh_remaining -= delta
+		var refresh_text: bool = _hud_refresh_remaining <= 0.0
+		var state_changed: bool = _hud_state_changed()
+		_refresh_phase(refresh_text or state_changed)
+		if refresh_text or state_changed:
+			_refresh_upgrade_timers()
+		if refresh_text:
+			_hud_refresh_remaining = maxf(0.0, _hud_refresh_remaining + HUD_REFRESH_INTERVAL)
 		if upgrades.has_pending():
 			_upgrade_delay_remaining = maxf(0.0, _upgrade_delay_remaining - delta)
 			if _upgrade_delay_remaining <= 0.0:
@@ -160,10 +174,45 @@ func _refresh_upgrade_timers() -> void:
 			lines.append("Last Stand · " + status)
 	interface.update_upgrade_timers(lines)
 
-func _refresh_phase() -> void:
+func _hud_state_changed() -> bool:
+	var changed: bool = false
 	var phase: PhaseController = balancer.phase_controller
 	if phase != null:
-		interface.update_phase(phase.is_phase_ready(), phase.get_cooldown_remaining(), phase.get_cooldown_duration(), phase.is_travelling())
+		var phase_state: int = phase.get_state()
+		var void_active: bool = phase.get_void_remaining() > 0.0
+		if phase_state != _phase_state or void_active != _void_active:
+			changed = true
+		_phase_state = phase_state
+		_void_active = void_active
+	var last_stand_status: int = 0
+	if balancer.last_stand:
+		last_stand_status = 1 if not balancer.last_stand_spent else (2 if balancer.last_stand_remaining > 0.0 else 3)
+	if last_stand_status != _last_stand_status:
+		changed = true
+		_last_stand_status = last_stand_status
+	var shockwave: ShockwaveController = balancer.shockwave_controller
+	if _shockwave_statuses.size() != shockwave._active.size():
+		_shockwave_statuses.resize(shockwave._active.size())
+		_shockwave_remaining.resize(shockwave._active.size())
+		changed = true
+	for index: int in shockwave._active.size():
+		var active: ShockwaveController.ActiveShockwave = shockwave._active[index]
+		var remaining: float = active.remaining if active.effect.trigger == ShockwaveEffect.Trigger.PERIODIC else active.cooldown_remaining
+		var status: int = 1 if remaining > 0.0 else 0
+		for pending: ShockwaveController.PendingShockwave in shockwave._pending:
+			if pending.active == active:
+				status = 2
+				break
+		if status != _shockwave_statuses[index] or remaining > _shockwave_remaining[index]:
+			changed = true
+		_shockwave_statuses[index] = status
+		_shockwave_remaining[index] = remaining
+	return changed
+
+func _refresh_phase(refresh_text: bool) -> void:
+	var phase: PhaseController = balancer.phase_controller
+	if phase != null:
+		interface.update_phase(phase.is_phase_ready(), phase.get_cooldown_remaining(), phase.get_cooldown_duration(), phase.is_travelling(), refresh_text)
 
 func _notification(what: int) -> void:
 	if what == NOTIFICATION_APPLICATION_FOCUS_OUT and is_node_ready():
@@ -283,6 +332,10 @@ func _apply_upgrade(offer: UpgradeOffer) -> void:
 		balancer.emit_growth_changed()
 	else:
 		_refresh_growth_display()
+	_refresh_phase(true)
+	_refresh_upgrade_timers()
+	_hud_state_changed()
+	_hud_refresh_remaining = HUD_REFRESH_INTERVAL
 
 func _refresh_growth_display() -> void:
 	interface.update_growth(balancer.life, balancer.size, upgrades.next_threshold)

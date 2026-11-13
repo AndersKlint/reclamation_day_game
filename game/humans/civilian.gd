@@ -12,7 +12,7 @@ const DISTANT_INTERVAL: float = 0.2
 const FULL_RATE_DISTANCE: float = 70.0
 
 static var _model_libraries: Dictionary = {}
-static var _model_sizes: Dictionary = {}
+static var _model_bounds: Dictionary = {}
 
 enum State { IDLE, STROLL, STARTLED, FLEE }
 
@@ -40,6 +40,7 @@ var _simulation_delta: float = 0.0
 var _cached_player_radius: float = 0.0
 @onready var _visual: Node3D = $Visual
 @onready var _drainable: Drainable = $Drainable
+@onready var _visibility: VisibleOnScreenNotifier3D = $Visibility
 
 func configure(balancer: CharacterBody3D, model: PackedScene) -> void:
 	player = balancer
@@ -51,9 +52,18 @@ func configure(balancer: CharacterBody3D, model: PackedScene) -> void:
 	assert(_animation != null, "Civilian model requires AnimationPlayer")
 	_animation.stop()
 	_animation.callback_mode_process = AnimationMixer.ANIMATION_CALLBACK_MODE_PROCESS_MANUAL
-	if not _model_sizes.has(model):
-		_model_sizes[model] = WorldModel.bounds(_visual, true).size
-	_model_dimensions = _model_sizes[model]
+	if not _model_bounds.has(model):
+		_model_bounds[model] = WorldModel.bounds(_visual, true)
+	var model_bounds: AABB = _model_bounds[model]
+	_model_dimensions = model_bounds.size
+	var horizontal_radius: float = Vector2(
+		maxf(absf(model_bounds.position.x), absf(model_bounds.end.x)),
+		maxf(absf(model_bounds.position.z), absf(model_bounds.end.z))
+	).length()
+	_visibility.aabb = AABB(
+		Vector3(-horizontal_radius, model_bounds.position.y, -horizontal_radius),
+		Vector3(horizontal_radius * 2.0, model_bounds.size.y, horizontal_radius * 2.0)
+	).grow(_model_dimensions.y * 0.25)
 	_drainable.configure_volume(_model_dimensions * global_basis.get_scale().abs())
 	if not _model_libraries.has(model):
 		var library: AnimationLibrary = _animation.get_animation_library("").duplicate() as AnimationLibrary
@@ -189,7 +199,8 @@ func _physics_process(delta: float) -> void:
 		move_and_slide()
 	if not horizontal.is_zero_approx():
 		_visual.rotation.y = lerp_angle(_visual.rotation.y, atan2(-horizontal.x, -horizontal.z), minf(1.0, delta * 8.0))
-	_animation.advance(delta)
+	if _visibility.is_on_screen():
+		_animation.advance(delta)
 
 func _on_drained(_amount: float) -> void:
 	_safe_time = 0.0
