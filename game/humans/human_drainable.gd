@@ -25,6 +25,7 @@ func configure_volume(dimensions: Vector3) -> void:
 func _init() -> void:
 	healing_per_life = 200.0
 	pacifist_protected = true
+	humanoid = true
 
 
 func drain(requested_amount: float, source_volume: float, recipient: Node3D) -> float:

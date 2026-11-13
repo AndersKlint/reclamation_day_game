@@ -78,9 +78,15 @@ func _physics_process(delta: float) -> void:
 	_path_queries_left = MAX_PATH_QUERIES
 	var candidates: Array[Civilian] = []
 	for index: int in mini(PLAN_SCAN, _people.size()):
+		if _people.is_empty():
+			break
 		_cursor = (_cursor + 1) % _people.size()
 		var person: Civilian = _people[_cursor]
-		if _is_live(person) and person.active and person.plan_due:
+		if not _is_live(person):
+			# Prune during the existing scan to avoid a separate O(n) sweep every tick.
+			_people.remove_at(_cursor)
+			continue
+		if person.active and person.plan_due:
 			candidates.append(person)
 	candidates.sort_custom(_plan_priority)
 	for index: int in mini(PLAN_BATCH, candidates.size()):
@@ -305,7 +311,8 @@ func _cell(point: Vector3) -> Vector2i:
 func _spawn_cell(point: Vector3) -> Vector2i:
 	return Vector2i(floori(point.x / 2.0), floori(point.z / 2.0))
 
-func _is_live(person: Civilian) -> bool:
+func _is_live(person: Variant) -> bool:
+	# Typed Object parameters reject freed instances before the body runs, so validity must be checked on a Variant.
 	return is_instance_valid(person) and not person.is_queued_for_deletion()
 
 func _player_radius() -> float:

@@ -13,6 +13,7 @@ enum State { UNCONFIGURED, DRAINING, COLLAPSED, TRANSFERRED }
 @export_range(0.0, 100.0) var emission_radius: float = 0.4
 @export_range(0.01, 100.0, 0.01, "or_greater") var drain_speed_multiplier: float = 1.0
 @export var pacifist_protected: bool = false
+var humanoid: bool = false
 var capacity: float = 0.0
 var remaining_capacity: float = 0.0
 var original_volume: float = 0.0

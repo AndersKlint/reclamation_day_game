@@ -4,6 +4,7 @@ extends Node
 const UpgradeDefinition = preload("res://game/upgrades/upgrade_definition.gd")
 const OFFER_COUNT: int = 3
 const FIRST_LIFE_THRESHOLD: float = 200.0
+const THRESHOLD_GROWTH: float = 1.75
 
 @export var catalog: UpgradeCatalog = preload("res://game/upgrades/upgrade_catalog.tres")
 
@@ -204,4 +205,4 @@ func _ensure_configured() -> void:
 
 
 func _advance_threshold() -> void:
-	_next_threshold *= 2.0
+	_next_threshold *= THRESHOLD_GROWTH

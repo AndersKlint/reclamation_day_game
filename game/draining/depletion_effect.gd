@@ -455,6 +455,8 @@ func _spawn_fragments(animated: bool) -> void:
 			batch.set_instance_transform(slot, Transform3D(Basis.from_scale(Vector3.ZERO), Vector3.ZERO))
 		batch.visible_instance_count = 0
 		var instance: MultiMeshInstance3D = MultiMeshInstance3D.new()
+		# Instance transforms are rewritten every idle frame, so interpolation would warp the debris.
+		instance.physics_interpolation_mode = Node.PHYSICS_INTERPOLATION_MODE_OFF
 		instance.multimesh = batch
 		instance.material_override = material
 		add_child(instance)

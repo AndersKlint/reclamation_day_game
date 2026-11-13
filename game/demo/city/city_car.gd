@@ -281,14 +281,26 @@ func _is_player_threat(forward: Vector3) -> bool:
 
 func _sensed_obstacle(delta: float, forward: Vector3) -> Dictionary:
 	_probe_left -= delta
-	if not _probe_initialized or _probe_left <= 0.0 or _probe_forward.dot(forward) < PROBE_DIRECTION_DOT:
+	var refresh: bool = not _probe_initialized or _probe_left <= 0.0 or _probe_forward.dot(forward) < PROBE_DIRECTION_DOT
+	if refresh:
 		var interval: float = NEAR_PROBE_INTERVAL if _is_near_player() else DISTANT_PROBE_INTERVAL
 		_cached_obstacle = _probe(forward)
 		_probe_origin = global_position
 		_probe_forward = forward
 		_probe_left = interval if _probe_initialized else interval * (0.5 + float(_priority % 97) / 194.0)
 		_probe_initialized = true
+	elif _is_obstacle_stale(_cached_obstacle):
+		# A cached hit can outlive its collider; its stale position must not keep the car braking.
+		_cached_obstacle = {}
 	return _cached_obstacle
+
+func _is_obstacle_stale(hit: Dictionary) -> bool:
+	if hit.is_empty():
+		return false
+	var collider: Variant = hit.get("collider")
+	if not is_instance_valid(collider) or not collider is Node:
+		return true
+	return (collider as Node).is_queued_for_deletion()
 
 func _is_near_player() -> bool:
 	if not is_instance_valid(_player) or not _player.has_method(&"get_combat_radius"):
@@ -339,11 +351,11 @@ func _footprint_extent(direction: Vector3) -> float:
 	return (absf(direction.dot(global_basis.x)) * fitted_size.x + absf(direction.dot(global_basis.z)) * fitted_size.z) * 0.5
 
 func _note_obstacle(hit: Dictionary) -> void:
-	var collider: Object = hit.get("collider")
+	var collider: Variant = hit.get("collider")
 	if is_instance_valid(collider) and collider is Node and (collider as Node).has_meta(&"city_car"):
-		var other: Node = (collider as Node).get_meta(&"city_car") as Node
-		if is_instance_valid(other) and other != self:
-			_yield_left = maxf(_yield_left, 0.35 if _priority < other.get_instance_id() else 0.85)
+		var other: Variant = (collider as Node).get_meta(&"city_car")
+		if is_instance_valid(other) and other is Node and other != self:
+			_yield_left = maxf(_yield_left, 0.35 if _priority < (other as Node).get_instance_id() else 0.85)
 			return
 	_yield_left = maxf(_yield_left, 0.25)
 

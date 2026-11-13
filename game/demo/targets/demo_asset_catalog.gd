@@ -7,6 +7,8 @@ const Scaling = preload("res://game/draining/drain_scaling.gd")
 const CityAssets = preload("res://game/demo/city/city_assets.gd")
 const ROOT: String = "res://available-assets/retro3d-assets/"
 const Forest = preload("res://game/demo/world/forest_assets.gd")
+const SKYSCRAPER_LIFE_MULTIPLIER: float = 0.5
+const SKYSCRAPER_RESISTANCE: float = 0.5
 
 static func instantiate_target(kind: StringName, dimensions: Vector3) -> Node3D:
 	var wrapper: Target = Target.new()
@@ -26,7 +28,9 @@ static func instantiate_target(kind: StringName, dimensions: Vector3) -> Node3D:
 		&"house1", &"house2", &"house3", &"house4", &"house5":
 			wrapper.drainable.drain_speed_multiplier = Scaling.VILLAGE_HOUSE_DRAIN_MULTIPLIER
 		&"city_highrise_1", &"city_highrise_2", &"city_highrise_3", &"city_tower_1", &"city_tower_2", &"city_tower_3", &"city_tower_4", &"city_plaza_tower", &"city_landmark":
-			wrapper.drainable.drain_speed_multiplier = 2.0
+			# Village resistance convention: speed scales by life per resistance, so time scales with resistance.
+			wrapper.drainable.life_modifier *= SKYSCRAPER_LIFE_MULTIPLIER
+			wrapper.drainable.drain_speed_multiplier *= SKYSCRAPER_LIFE_MULTIPLIER / SKYSCRAPER_RESISTANCE
 		_:
 			pass
 	return wrapper

@@ -150,6 +150,11 @@ func is_engaged() -> bool:
 		return false
 	return state == State.WINDUP or state == State.GRENADE_SWEEP or (_engaged and _target_distance() <= _pursuit.aggro_radius + AGGRO_HYSTERESIS)
 
+func _prune_shells() -> void:
+	for index: int in range(_shells.size() - 1, -1, -1):
+		if not is_instance_valid(_shells[index]):
+			_shells.remove_at(index)
+
 func _clear_shells() -> void:
 	for shell: Node3D in _shells:
 		if is_instance_valid(shell):
@@ -390,7 +395,7 @@ func _launch_grenade() -> void:
 	var grenade: Node3D = GRENADE.instantiate() as Node3D
 	get_parent().add_child(grenade)
 	grenade.configure(_player, origin, launch_velocity, grenade_damage, grenade_blast_radius, grenade_fuse, self)
-	_shells = _shells.filter(func(existing: Node3D) -> bool: return is_instance_valid(existing))
+	_prune_shells()
 	_shells.append(grenade)
 
 func _follow_route(delta: float) -> void:
@@ -481,7 +486,7 @@ func _resolve_attack() -> void:
 	var shell: Node3D = SHELL.instantiate() as Node3D
 	get_parent().add_child(shell)
 	shell.configure(_player, origin, direction, damage, impact_radius, self)
-	_shells = _shells.filter(func(existing: Node3D) -> bool: return is_instance_valid(existing))
+	_prune_shells()
 	_shells.append(shell)
 
 func _start_route() -> void:

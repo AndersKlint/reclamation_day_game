@@ -2,7 +2,7 @@ extends Area3D
 
 const Drainable = preload("res://game/draining/drainable.gd")
 signal life_absorbed(amount: float)
-signal transfer_effect_requested(source_id: int, source_position: Vector3, source_radius: float, actual_rate: float, proximity: float)
+signal transfer_effect_requested(source_id: int, source_position: Vector3, source_radius: float, actual_rate: float, proximity: float, humanoid: bool)
 
 var source_volume: float = 0.0
 var collector: Node3D
@@ -43,7 +43,7 @@ func _physics_process(delta: float) -> void:
 			var amount: float = target.drain(request * (1.0 + bonus / 100.0 * proximity), source_volume, collector)
 			absorbed += amount
 			if amount > 0.0:
-				transfer_effect_requested.emit(source_id, source_position, source_radius, amount / delta, proximity)
+				transfer_effect_requested.emit(source_id, source_position, source_radius, amount / delta, proximity, target.humanoid)
 				_request_healing(target.healing_for(amount))
 	if absorbed > 0.0:
 		life_absorbed.emit(absorbed)

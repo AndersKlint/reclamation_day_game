@@ -134,6 +134,15 @@ func _ready() -> void:
 	hide_overlays()
 
 
+func _input(event: InputEvent) -> void:
+	if not _showing_upgrades or not _overlay.visible or not (event is InputEventKey):
+		return
+	var key: InputEventKey = event as InputEventKey
+	# Space doubles as ui_accept, so consume it before the focused card receives it.
+	if key.keycode == KEY_SPACE or key.physical_keycode == KEY_SPACE:
+		get_viewport().set_input_as_handled()
+
+
 func update_health(current: float, maximum: float) -> void:
 	_health_label.text = "Health  %.0f / %.0f" % [current, maximum]
 	_health_bar.value = clampf(current / maximum, 0.0, 1.0) if maximum > 0.0 else 0.0
@@ -242,6 +251,8 @@ func show_results(success: bool, life: float = 0.0, size: float = 1.0, drained: 
 
 
 func hide_overlays() -> void:
+	_showing_upgrades = false
+	_debug_upgrades = false
 	_overlay.hide()
 	var focused: Control = _root.get_viewport().gui_get_focus_owner()
 	if focused != null and _overlay.is_ancestor_of(focused):

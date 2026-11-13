@@ -349,7 +349,9 @@ func _fire_bullet(direction: Vector3) -> void:
 	var bullet: Node3D = POLICE_BULLET.instantiate() as Node3D
 	get_parent().add_child(bullet)
 	bullet.configure(_balancer, origin, direction, damage, self)
-	_bullets = _bullets.filter(func(existing: Node3D) -> bool: return is_instance_valid(existing))
+	for index: int in range(_bullets.size() - 1, -1, -1):
+		if not is_instance_valid(_bullets[index]):
+			_bullets.remove_at(index)
 	_bullets.append(bullet)
 	PoliceAudio.play_shot(get_parent(), origin)
 

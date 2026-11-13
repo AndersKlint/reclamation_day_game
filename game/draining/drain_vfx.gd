@@ -25,6 +25,7 @@ class StreamLink:
 	var source_position: Vector3 = Vector3.ZERO
 	var radius: float = 0.0
 	var intensity: float = 0.0
+	var humanoid: bool = false
 	var particles: GPUParticles3D
 	var material: ShaderMaterial
 	var mote_material: ShaderMaterial
@@ -93,10 +94,11 @@ func set_enabled(enabled: bool) -> void:
 		link.particles.emitting = false
 		link.halo.visible = false
 		link.source_id = 0
+		link.humanoid = false
 		link.age = 0.0
 
 func record_transfer(source_id: int, source_position: Vector3, source_radius: float,
-		actual_rate: float, proximity: float) -> void:
+		actual_rate: float, proximity: float, humanoid: bool) -> void:
 	if not _enabled or not is_instance_valid(_collector) or actual_rate <= 0.0:
 		return
 	var link: StreamLink = _find_link(source_id)
@@ -105,6 +107,7 @@ func record_transfer(source_id: int, source_position: Vector3, source_radius: fl
 	if link.source_id == 0:
 		link.bounds = AABB(source_position, Vector3.ZERO).grow(2.0)
 	link.source_id = source_id
+	link.humanoid = humanoid
 	link.age = 0.0
 	link.source_position = source_position
 	link.radius = clampf(source_radius, 0.05, 64.0)
@@ -138,6 +141,7 @@ func _process(delta: float) -> void:
 		if link.age > freshness_timeout + _particle_lifetime:
 			link.particles.visible = false
 			link.source_id = 0
+			link.humanoid = false
 			continue
 		_update_link(link)
 
@@ -158,6 +162,7 @@ func _update_link(link: StreamLink) -> void:
 	link.bounds = link.bounds.merge(AABB(destination, Vector3.ZERO).grow(2.0))
 	link.particles.visibility_aabb = link.bounds
 	link.mote_material.set_shader_parameter("size_scale", clampf(0.4 + link.radius * 2.5, 0.5, 160.0))
+	link.mote_material.set_shader_parameter("humanoid_mix", 1.0 if link.humanoid else 0.0)
 	link.halo.global_position = link.source_position
 	link.halo.scale = Vector3.ONE * clampf(link.radius * 2.5, 0.6, 5.0)
 	link.halo_material.set_shader_parameter("strength_pixels", warp_strength_pixels * link.intensity)
