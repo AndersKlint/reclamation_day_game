@@ -10,18 +10,16 @@ const STATIC_BUILDING_PIECES: int = 48
 const STATIC_PROP_PIECES: int = 12
 const GROUND_SAMPLE_BUDGET: int = 32
 const MAGNET_FALL_GRAVITY: float = 14.0
-const MAGNET_BASE_ACCELERATION: float = 12.0
-const MAGNET_PULL: float = 900.0
-const MAGNET_MAX_ACCELERATION: float = 180.0
-const MAGNET_MAX_SPEED: float = 55.0
+const MAGNET_GRAVITY_STRENGTH: float = 450.0
+const MAGNET_GRAVITY_SOFTENING: float = 0.2
+const MAGNET_MIN_ACCELERATION: float = 9.0
+const MAGNET_MAX_ACCELERATION: float = 90.0
+const MAGNET_CONVERGENCE_DISTANCE: float = 3.0
+const MAGNET_FAR_TANGENTIAL_DAMPING: float = 0.72
+const MAGNET_NEAR_TANGENTIAL_DAMPING: float = 9.6
 const MAGNET_CONSUME_RADIUS: float = 0.6
 const MAGNET_SHRINK_DISTANCE: float = 1.4
 const MAGNET_MIN_SCALE: float = 0.18
-const MAGNET_CAPTURE_DISTANCE: float = 6.0
-const MAGNET_ORBIT_DECAY_SECONDS: float = 3.0
-const MAGNET_ORBIT_DAMPING: float = 2.2
-const MAGNET_RADIAL_DAMPING: float = 0.65
-const MAGNET_RECOVERY_SECONDS: float = 8.0
 const ABSORPTION_SEGMENT_SAMPLES: int = 8
 const AUTOMATIC_ABSORB_SECONDS: float = 1.0
 
@@ -52,8 +50,6 @@ class MagnetPiece:
 	var velocity: Vector3
 	var landing_y: float = 0.0
 	var age: float = 0.0
-	var pull_age: float = 0.0
-	var capture_age: float = -1.0
 	var delay: float = 0.0
 	var spin: float = 0.0
 	var life_share: float = 0.0
@@ -88,6 +84,8 @@ var _fallback_ground_height: float
 var _magnet_enabled: bool = false
 var _magnet_target: Node3D
 var _magnet_pieces: Array[MagnetPiece] = []
+var _magnet_world_basis: Basis = Basis.IDENTITY
+var _magnet_target_size: float = 1.0
 var _absorption_cone: AbsorptionCone = AbsorptionCone.new()
 var _pending_life: float = 0.0
 var _healing_per_life: float = 0.0
@@ -209,6 +207,8 @@ func _process(delta: float) -> void:
 		absorption_cone.base_radius = maxf(bounds.size.x, bounds.size.z) * 0.5
 		absorption_cone.top_radius = absorption_cone.base_radius * 0.5
 	var absorption_local: Transform3D = absorption_inverse * global_transform
+	_magnet_world_basis = global_basis
+	_magnet_target_size = maxf(float(_magnet_target.get(&"visible_size")), 0.1)
 	while remaining > 0.0:
 		var step: float = minf(remaining, 1.0 / 120.0)
 		_simulate_magnet_pieces(step, has_target, target, has_absorption, absorption_local, absorption_cone)
@@ -248,30 +248,25 @@ func _simulate_magnet_pieces(step: float, has_target: bool, target: Vector3, has
 
 
 func _advance_magnet_piece(piece: MagnetPiece, target: Vector3, step: float) -> void:
-	piece.pull_age += step
-	var relative_start: Vector3 = piece.position - target
-	var distance: float = relative_start.length()
-	var direction: Vector3 = -relative_start / maxf(distance, 0.0001)
-	if piece.capture_age >= 0.0:
-		piece.capture_age += step
-	elif distance <= MAGNET_CAPTURE_DISTANCE:
-		piece.capture_age = 0.0
-	var recovery: float = smoothstep(MAGNET_RECOVERY_SECONDS, MAGNET_RECOVERY_SECONDS * 2.0, piece.pull_age)
-	var convergence: float = maxf(smoothstep(0.0, MAGNET_ORBIT_DECAY_SECONDS, piece.capture_age), recovery)
-	var drag_strength: float = lerpf(0.05, 1.0, convergence)
-	var radial_velocity: Vector3 = direction * piece.velocity.dot(direction)
+	var offset: Vector3 = target - piece.position
+	var world_offset: Vector3 = _magnet_world_basis * offset
+	var distance_squared: float = world_offset.length_squared()
+	var distance: float = sqrt(distance_squared)
+	var relative_distance: float = distance / _magnet_target_size
+	var direction: Vector3 = offset / maxf(distance, 0.0001)
+	var convergence: float = 1.0 - smoothstep(0.0, MAGNET_CONVERGENCE_DISTANCE, relative_distance)
+	var acceleration: float = clampf(MAGNET_GRAVITY_STRENGTH / (relative_distance * relative_distance + MAGNET_GRAVITY_SOFTENING * MAGNET_GRAVITY_SOFTENING), MAGNET_MIN_ACCELERATION, MAGNET_MAX_ACCELERATION)
+	var world_velocity: Vector3 = _magnet_world_basis * piece.velocity
+	var radial_velocity: Vector3 = offset * (world_velocity.dot(world_offset) / maxf(distance_squared, 0.00000001))
 	var tangential_velocity: Vector3 = piece.velocity - radial_velocity
-	piece.velocity = radial_velocity * exp(-MAGNET_RADIAL_DAMPING * drag_strength * step) + tangential_velocity * exp(-MAGNET_ORBIT_DAMPING * drag_strength * step)
-	var acceleration: float = minf(MAGNET_BASE_ACCELERATION + MAGNET_PULL / maxf(distance * distance, 0.04), MAGNET_MAX_ACCELERATION)
-	acceleration *= lerpf(1.0, 2.0, recovery)
-	piece.velocity = (piece.velocity + direction * acceleration * step).limit_length(MAGNET_MAX_SPEED)
+	var damping: float = lerpf(MAGNET_FAR_TANGENTIAL_DAMPING, MAGNET_NEAR_TANGENTIAL_DAMPING, convergence)
+	piece.velocity = radial_velocity + tangential_velocity * exp(-damping * step)
+	piece.velocity += direction * acceleration * step
 	piece.position += piece.velocity * step
 	var relative_end: Vector3 = piece.position - target
-	var closest: Vector3 = Geometry3D.get_closest_point_to_segment(Vector3.ZERO, relative_start, relative_end)
-	if piece.capture_age < 0.0 and closest.length_squared() <= MAGNET_CAPTURE_DISTANCE * MAGNET_CAPTURE_DISTANCE:
-		piece.capture_age = 0.0
 	piece.basis = piece.basis.rotated(Vector3.UP, piece.spin * step)
-	var shrink: float = clampf((relative_end.length() - MAGNET_CONSUME_RADIUS) / MAGNET_SHRINK_DISTANCE, MAGNET_MIN_SCALE, 1.0)
+	var relative_end_distance: float = (_magnet_world_basis * relative_end).length() / _magnet_target_size
+	var shrink: float = clampf((relative_end_distance - MAGNET_CONSUME_RADIUS) / MAGNET_SHRINK_DISTANCE, MAGNET_MIN_SCALE, 1.0)
 	piece.scale_factor = shrink
 
 
