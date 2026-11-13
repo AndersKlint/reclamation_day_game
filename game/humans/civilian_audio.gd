@@ -7,6 +7,10 @@ const SCREAMS: Array[AudioStream] = [
 ]
 const VOICE_LIMIT: int = 6
 const START_INTERVAL: float = 0.35
+const SCREAM_RANGE: float = 250.0
+const SCREAM_UNIT_SIZE: float = 25.0
+const SCREAM_FILTER_CUTOFF_HZ: float = 8000.0
+const SCREAM_FILTER_DB: float = -6.0
 
 var _voices: Array[AudioStreamPlayer3D] = []
 var _speakers: Array[Node3D] = []
@@ -18,8 +22,11 @@ func _ready() -> void:
 		var voice: AudioStreamPlayer3D = AudioStreamPlayer3D.new()
 		voice.volume_db = -11.0
 		voice.max_db = -4.0
-		voice.unit_size = 14.0
-		voice.max_distance = 80.0
+		voice.attenuation_model = AudioStreamPlayer3D.ATTENUATION_INVERSE_DISTANCE
+		voice.attenuation_filter_cutoff_hz = SCREAM_FILTER_CUTOFF_HZ
+		voice.attenuation_filter_db = SCREAM_FILTER_DB
+		voice.max_distance = SCREAM_RANGE
+		voice.unit_size = SCREAM_UNIT_SIZE
 		voice.max_polyphony = 1
 		voice.bus = &"SFX" if AudioServer.get_bus_index(&"SFX") >= 0 else &"Master"
 		add_child(voice)

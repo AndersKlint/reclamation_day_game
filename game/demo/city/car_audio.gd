@@ -106,10 +106,10 @@ func _has_engine_voice() -> bool:
 	if _budget_frame != frame:
 		_budget_frame = frame
 		_audible_engines.clear()
-		var camera: Camera3D = get_viewport().get_camera_3d()
-		if camera == null:
+		var listener: Node3D = _audio_listener()
+		if listener == null:
 			return false
-		var listener_position: Vector3 = camera.global_position
+		var listener_position: Vector3 = listener.global_position
 		var candidates: Array[Node3D] = []
 		for node: Node in get_tree().get_nodes_in_group(AUDIO_GROUP):
 			var audio: Node3D = node as Node3D
@@ -122,6 +122,15 @@ func _has_engine_voice() -> bool:
 		for i: int in mini(ENGINE_BUDGET, candidates.size()):
 			_audible_engines[candidates[i].get_instance_id()] = true
 	return _audible_engines.has(get_instance_id())
+
+func _audio_listener() -> Node3D:
+	var viewport: Viewport = get_viewport()
+	if viewport == null:
+		return null
+	var listener: AudioListener3D = viewport.get_audio_listener_3d()
+	if listener != null:
+		return listener
+	return viewport.get_camera_3d()
 
 func _has_voice(group: StringName, budget: int) -> bool:
 	var playing: int = 0

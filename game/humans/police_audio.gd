@@ -8,10 +8,20 @@ static func play_shot(parent: Node, position: Vector3) -> void:
 
 static func play_flyby(parent: Node, position: Vector3) -> void:
 	var playback_position: Vector3 = position
-	var camera: Camera3D = parent.get_viewport().get_camera_3d()
-	if camera != null:
-		playback_position = camera.global_position + (position - camera.global_position).limit_length(4.0)
+	var listener: Node3D = _audio_listener(parent)
+	if listener != null:
+		var listener_position: Vector3 = listener.global_position
+		playback_position = listener_position + (position - listener_position).limit_length(4.0)
 	_play(parent, playback_position, FLYBY, -10.0, 12.0)
+
+static func _audio_listener(parent: Node) -> Node3D:
+	var viewport: Viewport = parent.get_viewport()
+	if viewport == null:
+		return null
+	var listener: AudioListener3D = viewport.get_audio_listener_3d()
+	if listener != null:
+		return listener
+	return viewport.get_camera_3d()
 
 static func _play(parent: Node, position: Vector3, sound: AudioStream, level: float, distance: float, unit_size: float = 8.0) -> void:
 	var player: AudioStreamPlayer3D = AudioStreamPlayer3D.new()
