@@ -17,7 +17,7 @@ const MAGNET_MAX_ACCELERATION: float = 90.0
 const MAGNET_CONVERGENCE_DISTANCE: float = 3.0
 const MAGNET_FAR_TANGENTIAL_DAMPING: float = 0.72
 const MAGNET_NEAR_TANGENTIAL_DAMPING: float = 9.6
-const MAGNET_CONSUME_RADIUS: float = 0.6
+const MAGNET_CONSUME_RADIUS: float = 0.8
 const MAGNET_SHRINK_DISTANCE: float = 1.4
 const MAGNET_MIN_SCALE: float = 0.18
 const ABSORPTION_SEGMENT_SAMPLES: int = 8
@@ -62,7 +62,7 @@ class MagnetPiece:
 var female_voice: bool = false
 var play_death_voice: bool = true
 var reserved_life: float = 0.0
-@export_range(0.1, 5.0, 0.05) var building_collapse_duration: float = 0.8
+@export_range(0.1, 5.0, 0.05) var building_collapse_duration: float = 0.6
 @export_range(0.1, 5.0, 0.05) var plant_collapse_duration: float = 1.15
 @export var dust_color: Color = Color(0.56, 0.49, 0.37, 0.48)
 @export_range(0.0, 2.0, 0.05) var dust_spread_multiplier: float = 1.0

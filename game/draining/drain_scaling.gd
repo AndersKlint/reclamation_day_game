@@ -1,9 +1,9 @@
 extends RefCounted
 
-const LIFE_PER_VOLUME: float = 1.0
-const REQUIRED_VOLUME_RATIO: float = 0.2
-const GROWTH_VOLUME_SHARE: float = 0.10
-const COLLAPSE_LIFE_SHARE: float = 0.8
+const LIFE_PER_VOLUME: float = 0.5
+const REQUIRED_VOLUME_RATIO: float = 0.5
+const GROWTH_VOLUME_SHARE: float = 0.15
+const COLLAPSE_LIFE_SHARE: float = 0.6
 const VILLAGE_HOUSE_DRAIN_MULTIPLIER: float = 5.0
 const VOLUME_RATE_REFERENCE_RATIO: float = 0.5
 const VOLUME_RATE_REFERENCE_SECONDS: float = 30.0
